@@ -28,5 +28,6 @@ add_link_options(-pthread)
 set(DEPLOY_DIR "$ENV{HOME}/ensc351/public/myApps")
 
 # Which folders to build
+add_subdirectory(common)
 add_subdirectory(node)
 add_subdirectory(master)
