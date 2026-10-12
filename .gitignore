@@ -1,0 +1,23 @@
+# Build output
+build/
+*.o
+*.a
+*.so
+
+# CMake files from in-source builds
+CMakeFiles/
+CMakeCache.txt
+cmake_install.cmake
+Makefile
+compile_commands.json
+
+# Editors
+*~
+\#*\#
+.#*
+.vscode/
+.idea/
+.cache/
+
+# Large recordings
+*.wav
