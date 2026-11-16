@@ -6,6 +6,7 @@
 #include "node/dspLink.h"
 #include "common/framing.h"
 #include "common/protocol.h"
+#include "common/shutdown.h"
 #include "common/timing.h"
 #include <arpa/inet.h>
 #include <assert.h>
@@ -53,6 +54,7 @@ static const char *describeHelloStatus(uint8_t status);
 static void runSession(int socketFd, Framing_reader_t *pReader);
 static bool readFromMaster(int socketFd, Framing_reader_t *pReader);
 static bool handleMessagesFromMaster(Framing_reader_t *pReader);
+static void handleBye(const uint8_t *pPayload, size_t payloadLen);
 static bool sendDspEvents(int socketFd, long long *pLastSendMs);
 static bool sendHeartbeat(int socketFd);
 static void fillClockStatus(struct proto_heartbeat *pHeartbeat);
@@ -358,12 +360,9 @@ static bool handleMessagesFromMaster(Framing_reader_t *pReader)
 	bool isConnected = true;
 	Framing_result_t result = Framing_getMessage(pReader, &header, &pPayload);
 	while (isConnected && result == FRAMING_MESSAGE_READY) {
-		struct proto_bye bye;
 		switch (header.msg_type) {
 		case PROTO_MSG_BYE:
-			if (proto_unpack_bye(pPayload, header.payload_len, &bye) == PROTO_OK) {
-				fprintf(stderr, "Master said BYE (reason %u).\n", bye.reason);
-			}
+			handleBye(pPayload, header.payload_len);
 			isConnected = false;
 			break;
 		default:
@@ -379,6 +378,25 @@ static bool handleMessagesFromMaster(Framing_reader_t *pReader)
 		isConnected = reportFramingError(result);
 	}
 	return isConnected;
+}
+
+static void handleBye(const uint8_t *pPayload, size_t payloadLen)
+{
+	struct proto_bye bye;
+	if (proto_unpack_bye(pPayload, payloadLen, &bye) != PROTO_OK) {
+		fprintf(stderr, "Master said BYE.\n");
+	} else if (bye.reason == PROTO_BYE_REPLACED) {
+		// The master replaces an old connection when a node with the same ID
+		// says HELLO, to clean up after a node that rebooted. A node that
+		// really rebooted is gone and never sees this BYE, so getting it
+		// means another running node has our ID. Reconnecting would knock
+		// that node off in turn, and the two would swap places every second.
+		fprintf(stderr, "Another node connected as node %u, so this one is shutting down. "
+		                "Check that every node has its own ID.\n", myNodeId);
+		Shutdown_request();
+	} else {
+		fprintf(stderr, "Master said BYE (reason %u).\n", bye.reason);
+	}
 }
 
 static bool sendDspEvents(int socketFd, long long *pLastSendMs)

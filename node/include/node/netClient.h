@@ -6,6 +6,9 @@
 // If the connection drops, it tries again every PROTO_RECONNECT_MS. Events
 // the DSP finds while disconnected are thrown away, since a late event is
 // useless for localization.
+//
+// The exception is BYE(REPLACED), which means another node has the same ID.
+// Then it calls Shutdown_request() instead of reconnecting.
 
 #ifndef NET_CLIENT_H
 #define NET_CLIENT_H
