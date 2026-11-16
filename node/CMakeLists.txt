@@ -1,5 +1,6 @@
 # Build the node executable
 
+include_directories(include)
 file(GLOB MY_SOURCES "src/*.c")
 add_executable(node ${MY_SOURCES})
 
