@@ -27,7 +27,8 @@ int main(int argc, char *argv[])
 		return EXIT_FAILURE;
 	}
 
-    // Shutdown_init() must come first so that every thread started after it has SIGINT and SIGTERM blocked
+    // Shutdown_init() must come first so that every thread that is started after it
+    // has SIGINT and SIGTERM blocked
 	Shutdown_init();
 	DspLink_init();
 	NetClient_init(nodeId, argv[2], port);
@@ -35,8 +36,7 @@ int main(int argc, char *argv[])
 	// Wait for Ctrl+C or SIGTERM
 	Shutdown_waitForRequest();
 
-	// Stop in the reverse order, so no module is still using one that has
-	// already stopped
+	// Stop in the reverse order so that no module is still using one that has already stopped
 	NetClient_cleanup();
 	DspLink_cleanup();
 	Shutdown_cleanup();
@@ -46,8 +46,8 @@ int main(int argc, char *argv[])
 static bool parseArgs(int argc, char *argv[], uint16_t *pNodeId, uint16_t *pPort)
 {
 	bool isValid = (argc == 3 || argc == 4)
-	               && parseUint16(argv[1], pNodeId)
-	               && *pNodeId != PROTO_MASTER_ID;
+		&& parseUint16(argv[1], pNodeId)
+		&& *pNodeId != PROTO_MASTER_ID;
 	if (isValid && argc == 4) {
 		isValid = parseUint16(argv[3], pPort);
 	}
@@ -59,7 +59,7 @@ static bool parseUint16(const char *pText, uint16_t *pValue)
 	char *pEnd = NULL;
 	errno = 0;
 	unsigned long value = strtoul(pText, &pEnd, DECIMAL);
-	// Reject empty text, trailing junk ("12abc"), and values that don't fit
+	// reject empty text, junk, values that are too big
 	bool isValid = (pEnd != pText && *pEnd == '\0' && errno == 0 && value <= UINT16_MAX);
 	if (isValid) {
 		*pValue = (uint16_t)value;
