@@ -1,5 +1,6 @@
 # Build the master executable
 
+include_directories(include)
 file(GLOB MY_SOURCES "src/*.c")
 add_executable(master ${MY_SOURCES})
 
