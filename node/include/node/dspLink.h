@@ -25,7 +25,9 @@ uint8_t DspLink_getMicCount(void);
 // to fill in.
 bool DspLink_takeEvent(struct proto_event *pEvent);
 
-// True if the DSP has made progress since the last call
+// True if the DSP has made progress since the last call. The DSP side will
+// count captured buffers (not events, since events are rare), so this is
+// true if that counter moved.
 bool DspLink_isDspAlive(void);
 
 // Events the DSP has had to drop since it started (because nobody took them
