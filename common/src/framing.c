@@ -25,8 +25,9 @@ ssize_t Framing_readFromSocket(Framing_reader_t *pReader, int socketFd)
 	discardHandedOutMessage(pReader);
 
 	// The header check caps a message at PROTO_MAX_MSG_LEN, which is the
-	// buffer size. So if the caller has taken every complete message, what's
-	// left is part of one message, and there's always room for more.
+	// buffer size. If the caller has taken every complete message (like the
+	// header says to), what's left is part of one message, so there is
+	// always room for more.
 	size_t numBytesFree = sizeof(pReader->buffer) - pReader->numBytesHeld;
 	assert(numBytesFree > 0);
 
@@ -47,6 +48,7 @@ Framing_result_t Framing_getMessage(Framing_reader_t *pReader,
 	assert(pReader != NULL && pHeader != NULL && ppPayload != NULL);
 	discardHandedOutMessage(pReader);
 
+	// We can't know how long the message is until the whole header is here
 	if (pReader->numBytesHeld < PROTO_HEADER_LEN) {
 		return FRAMING_NEED_MORE_BYTES;
 	}
@@ -57,6 +59,8 @@ Framing_result_t Framing_getMessage(Framing_reader_t *pReader,
 		if (pReader->numBytesHeld < messageLen) {
 			result = FRAMING_NEED_MORE_BYTES;
 		} else {
+			// The message stays in the buffer until the next reader call, so
+			// the caller's payload pointer stays valid until then
 			*ppPayload = pReader->buffer + PROTO_HEADER_LEN;
 			pReader->numBytesToDiscard = messageLen;
 		}
@@ -74,7 +78,8 @@ bool Framing_sendMessage(int socketFd,
 	return sendAll(socketFd, pMessage, PROTO_HEADER_LEN + pHeader->payload_len);
 }
 
-// Shift any bytes after the last message down to the start of the buffer
+// Shifts any bytes after the last message handed out down to the start of
+// the buffer, so the next message always starts at buffer[0].
 static void discardHandedOutMessage(Framing_reader_t *pReader)
 {
 	if (pReader->numBytesToDiscard > 0) {
@@ -88,6 +93,8 @@ static void discardHandedOutMessage(Framing_reader_t *pReader)
 	}
 }
 
+// Turns the result of proto_unpack_header() into the reader's own result, so
+// callers only have to deal with one set of values.
 static Framing_result_t toFramingResult(enum proto_result headerResult)
 {
 	Framing_result_t result = FRAMING_BAD_MAGIC;
@@ -105,20 +112,23 @@ static Framing_result_t toFramingResult(enum proto_result headerResult)
 		result = FRAMING_BAD_LENGTH;
 		break;
 	default:
+		// proto_unpack_header() only returns the values above, so anything
+		// else is our bug
 		assert(false);
 	}
 	return result;
 }
 
 // send() can return before it has sent everything (for example, when the
-// socket's send buffer fills up), so keep going until it's all out
+// socket's send buffer fills up), so we keep going until it's all out.
+// Returns false if the connection failed.
 static bool sendAll(int socketFd, const uint8_t *pData, size_t numBytes)
 {
 	size_t numBytesSent = 0;
 	bool isConnected = true;
 	while (isConnected && numBytesSent < numBytes) {
 		// MSG_NOSIGNAL makes a closed socket return EPIPE, instead of killing
-		// the process with SIGPIPE
+		// the whole process with SIGPIPE
 		ssize_t result = send(socketFd,
 		                      pData + numBytesSent,
 		                      numBytes - numBytesSent,

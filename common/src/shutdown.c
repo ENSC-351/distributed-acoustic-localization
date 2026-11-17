@@ -14,28 +14,34 @@ static pthread_cond_t requestedCondition = PTHREAD_COND_INITIALIZER;
 static pthread_t signalThread;
 static sigset_t shutdownSignals;
 
+// The job of this thread is to wait for, and eventuall turn a CTRL+C into a
+// Shutdown_request() call.
+// Waiting in a normal thread, instead of catching the signal with a signal
+// handler, means Shutdown_request() is free to lock a mutex. A handler runs
+// on top of whichever thread the signal interrupted, and if that thread
+// already holds the lock, locking it again deadlocks.
 static void *signalThreadFn(void *pArg)
 {
 	(void)pArg;
 	int signalNumber = 0;
-	// Wait for the signal in a normal thread instead of catching it with
-	// a signal handler so that Shutdown_request() is free to lock a mutex.
-	// A handler is able to interrupt a thread that already holds that mutex.
+	// Sleep until one of the signals in the set is pending
 	sigwait(&shutdownSignals, &signalNumber);
 	Shutdown_request();
-	// pthread_create expects a generic pointer
 	return NULL;
 }
 
 void Shutdown_init(void)
 {
+	// Build the set of potential shutdown signals
 	sigemptyset(&shutdownSignals);
 	sigaddset(&shutdownSignals, SIGINT);
 	sigaddset(&shutdownSignals, SIGTERM);
 
-	// New threads copy the signal mask of the thread that creates them so
-	// that blocking the signals here blocks them in every thread started
-	// later. Only sigwait() in the signal thread can see them.
+	// Blocked signals are not thrown away, they are held by the kernal as
+	// "pending" until someone (a thread) is ready to deal with it.
+	// pthread_sigmask() only changes the calling thread, but threads created
+	// afterwards copy its mask, so every thread started after this has the
+	// signals blocked too. Only sigwait() in the signal thread will take them.
 	int result = pthread_sigmask(SIG_BLOCK, &shutdownSignals, NULL);
 	if (result != 0) {
 		fprintf(stderr, "Failed to block shutdown signals!\n");
@@ -53,7 +59,6 @@ void Shutdown_request(void)
 {
 	pthread_mutex_lock(&lock);
 	isShutdownRequested = true;
-	// wake up all threads waiting in Shutdown_waitForRequest()
 	pthread_cond_broadcast(&requestedCondition);
 	pthread_mutex_unlock(&lock);
 }
@@ -61,7 +66,8 @@ void Shutdown_request(void)
 void Shutdown_waitForRequest(void)
 {
 	pthread_mutex_lock(&lock);
-	// we loop here because pthread_cond_wait() can return without a broadcast
+	// Loop because pthread_cond_wait() can return without a broadcast
+	// (a spurious wakeup)
 	while (!isShutdownRequested) {
 		pthread_cond_wait(&requestedCondition, &lock);
 	}
@@ -70,9 +76,12 @@ void Shutdown_waitForRequest(void)
 
 void Shutdown_cleanup(void)
 {
-	// If the shutdown wasnt caused by a signal the signal thread will still
-	// be stuck in sigwait(), so give it a signal. This can't kill the
-	// process because the signal is blocked
+	// pthread_kill() is used to prevent a hang in the following scenario:
+	// If a shutdown doesn't come from a signal, the thread will still be stuck in
+	// sigwait(), therefore pthread_join() would wait forever.
+	// The shutdown signal only goes to the signalThread. The signalThread has the
+	// shutdown signal blocked, so it either wakes up sigwait() or it is discarded
+	// and the default action is never reached.
 	pthread_kill(signalThread, SIGTERM);
 	pthread_join(signalThread, NULL);
 }

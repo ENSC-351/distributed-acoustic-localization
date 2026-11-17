@@ -1,6 +1,3 @@
-// timing.c
-// Timing module: helpers for delaying the calling thread and reading clocks.
-
 #include "common/timing.h"
 #include <assert.h>
 #include <time.h>
@@ -17,7 +14,7 @@ void Timing_sleepForMs(long long delayInMs)
 void Timing_sleepForNs(long long delayInNs)
 {
 	assert(delayInNs >= 0);
-	// tv_nsec must stay below one second, so split off the whole seconds
+	// tv_nsec has to stay below 1 billion so it splits the total.
 	struct timespec reqDelay = {
 		.tv_sec = delayInNs / NS_PER_SECOND,
 		.tv_nsec = delayInNs % NS_PER_SECOND,

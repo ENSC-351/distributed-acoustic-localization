@@ -1,5 +1,5 @@
 // timing.h
-// Timing module: helpers for delaying the calling thread and reading clocks.
+// Timing module: helpers for sleeping and for reading the two clocks we use.
 
 #ifndef TIMING_H
 #define TIMING_H
@@ -8,18 +8,20 @@
 
 #define MS_PER_SECOND 1000
 
-// Block the calling thread for `delayInMs` milliseconds.
 void Timing_sleepForMs(long long delayInMs);
 
-// Block the calling thread for `delayInNs` nanoseconds.
 void Timing_sleepForNs(long long delayInNs);
 
-// Milliseconds on CLOCK_MONOTONIC. Use this for durations on one board,
-// since it never jumps when chrony steps the clock.
+// CLOCK_MONOTONIC counts up steadily from boot, nothing can mess with it.
+// Use this function for durations and timeouts within a board.
+// CLOCK_REALTIME can jump when chrony steps it, so it is not good when we want
+// a timer to fire at a predictable time
 long long Timing_getMonotonicMs(void);
 
-// Nanoseconds on CLOCK_REALTIME. Use this for timestamps that get compared
+// CLOCK_REALTIME is the wall clock, which should be synced by chrony
 // between boards.
+// Chrony is allowed to step this time (modify it)
+// Use this for timestamps compared between boards.
 uint64_t Timing_getRealtimeNs(void);
 
 #endif
