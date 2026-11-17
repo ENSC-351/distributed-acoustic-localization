@@ -1,0 +1,20 @@
+$ uname -a
+Linux madden-byai 6.1.83-ti-arm64-r71 #1bookworm SMP PREEMPT_DYNAMIC Wed Jun 25 04:02:14 UTC 2025 aarch64 GNU/Linux
+$ file ./node-demo
+./node-demo: ELF 64-bit LSB pie executable, ARM aarch64, version 1 (SYSV), dynamically linked, interpreter /lib/ld-linux-aarch64.so.1, BuildID[sha1]=b8c031970bc164bff7887d085a4aa699d9aa9789, for GNU/Linux 3.7.0, not stripped
+$ DSP_WINDOWS_DIR=context/integration/windows ./node-demo 1 127.0.0.1
+syntheticDsp: 8 windows loaded, xcorr, fs=48000 Hz, d=0.10 m (PLACEHOLDER), estimator ready. SYNTHETIC DATA ONLY.
+Connected to master as node 1 (heartbeat every 1000 ms).
+DSP window=delay_frac_2p5_event0  n=960 expect_lag= 2.50 expect_theta= -10.3 | lag=  2.57 theta= -10.6 conf=1.00 psr=  7.8 status=ok | est 7108 us | -> EVENT
+DSP window=delay_minus7_event0    n=960 expect_lag=-7.00 expect_theta=  30.0 | lag= -6.98 theta=  29.9 conf=1.00 psr=  7.8 status=ok | est 7046 us | -> EVENT
+DSP window=delay_plus3_event0     n=960 expect_lag= 3.00 expect_theta= -12.4 | lag=  3.03 theta= -12.5 conf=1.00 psr=  7.8 status=ok | est 7050 us | -> EVENT
+DSP window=delay_plus7_event0     n=960 expect_lag= 7.00 expect_theta= -30.0 | lag=  6.95 theta= -29.8 conf=1.00 psr=  7.9 status=ok | est 7054 us | -> EVENT
+DSP window=delay_zero_event0      n=960 expect_lag= 0.00 expect_theta=  -0.0 | lag= -0.04 theta=   0.2 conf=1.00 psr=  7.8 status=ok | est 7047 us | -> EVENT
+DSP window=low_snr_event0         n=960 expect_lag= 7.00 expect_theta= -30.0 | lag=  7.85 theta= -34.1 conf=0.02 psr=  7.6 status=ok AMBIGUOUS | est 7038 us | -> EVENT
+DSP window=two_impacts_event0     n=960 expect_lag= 7.00 expect_theta= -30.0 | lag=  7.04 theta= -30.2 conf=1.00 psr=  7.8 status=ok | est 7046 us | -> EVENT
+DSP window=two_impacts_event1     n=960 expect_lag= 7.00 expect_theta= -30.0 | lag=  7.05 theta= -30.2 conf=1.00 psr=  7.9 status=ok | est 7052 us | -> EVENT
+DSP window=delay_frac_2p5_event0  n=960 expect_lag= 2.50 expect_theta= -10.3 | lag=  2.57 theta= -10.6 conf=1.00 psr=  7.8 status=ok | est 7053 us | -> EVENT
+Disconnected from master.
+NetClient thread cleaned up successfully.
+syntheticDsp: 9 windows processed, 9 sent, 0 refused
+node exit code: 124

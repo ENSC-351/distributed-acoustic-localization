@@ -1,0 +1,22 @@
+$ uname -a
+Linux madden-byai 6.1.83-ti-arm64-r71 #1bookworm SMP PREEMPT_DYNAMIC Wed Jun 25 04:02:14 UTC 2025 aarch64 GNU/Linux
+$ file ./master-demo
+./master-demo: ELF 64-bit LSB pie executable, ARM aarch64, version 1 (SYSV), dynamically linked, interpreter /lib/ld-linux-aarch64.so.1, BuildID[sha1]=caa1837c45339e6009d7c3762ee3e56bc25580de, for GNU/Linux 3.7.0, not stripped
+$ ./master-demo
+Listening for nodes on port 35100.
+Connection from 127.0.0.1, waiting for HELLO.
+Node 1 connected from 127.0.0.1 (2 mics).
+Node 1 event 0: theta -10.6
+Node 1 event 1: theta 29.9
+Node 1 event 2: theta -12.5
+Node 1 event 3: theta -29.8
+Node 1 event 4: theta 0.2
+Node 1 event 5: theta -34.1
+Node 1 event 6: theta -30.2
+Node 1 event 7: theta -30.2
+Node 1 event 8: theta -10.6
+Node 1 said BYE.
+Node 1 disconnected.
+NetServer thread cleaned up successfully.
+EventBuffer received 9 events.
+master exit code: 0

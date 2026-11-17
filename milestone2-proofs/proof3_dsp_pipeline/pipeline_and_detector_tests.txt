@@ -1,0 +1,27 @@
+$ uname -a
+Linux madden-byai 6.1.83-ti-arm64-r71 #1bookworm SMP PREEMPT_DYNAMIC Wed Jun 25 04:02:14 UTC 2025 aarch64 GNU/Linux
+python 3.11.2 numpy 1.24.2 pytest 7.2.1
+
+$ (cd context/tyler_dsp_v2 && python3 -m pytest -q -p no:cacheprovider)
+....................................                                     [100%]
+36 passed in 2.80s
+exit code: 0
+
+$ file tdoa_cli
+tdoa_cli: ELF 64-bit LSB pie executable, ARM aarch64, version 1 (SYSV), dynamically linked, interpreter /lib/ld-linux-aarch64.so.1, BuildID[sha1]=787faec1023a2e9131bf6563592408772561de07, for GNU/Linux 3.7.0, not stripped
+$ python3 -I context/integration/check_pipeline.py context/tyler_dsp_v2 ./tdoa_cli /tmp/pipeline_beagle
+case            ev expect | xcorr d=0.10: lag   status | gcc   d=0.10: lag   status | xcorr d=0.30: lag   status | gcc   d=0.30: lag   status
+delay_plus7      0      7 |   6.95 ok                     |   6.40 ok                     |   6.95 ok                     |   6.40 ok                    
+delay_zero       0      0 |  -0.04 ok                     |   0.40 ok                     |  -0.04 ok                     |   0.40 ok                    
+delay_minus7     0     -7 |  -6.98 ok                     |  -6.98 ok                     |  -6.98 ok                     |  -6.98 ok                    
+delay_plus3      0      3 |   3.03 ok                     |   3.67 ok                     |   3.03 ok                     |   3.67 ok                    
+delay_frac_2p5   0    2.5 |   2.57 ok                     |   2.79 ok                     |   2.57 ok                     |   2.79 ok                    
+low_snr          0      7 |   7.85 ok                     |   5.63 weak correlation peak  |   7.85 ok                     |   5.63 weak correlation peak 
+no_impact        -   none | (no window to estimate)
+two_impacts      0      7 |   7.04 ok                     |   7.26 ok                     |   7.04 ok                     |   7.26 ok                    
+two_impacts      1      7 |   7.05 ok                     |   6.92 ok                     |   7.05 ok                     |   6.92 ok                    
+
+window length 960 samples at 48000 Hz; max delay = 14.0 samples at d=0.1, 42.0 at d=0.3
+exit code: 0
+
+Comparison with Windows results.json: 32 vs 32 rows, 0 status mismatches/missing, max abs diff 0
