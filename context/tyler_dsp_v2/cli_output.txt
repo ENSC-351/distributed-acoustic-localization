@@ -1,0 +1,3 @@
+input: testdata/two_impacts.npz   fs: 48000 Hz   samples/channel: 12000
+event 0: trigger @ record index 2403, window [2163, 3123) = 960 samples, trigger in window = 240, flags = {'incomplete': False, 'clipped_a': None, 'clipped_b': None}
+event 1: trigger @ record index 6723, window [6483, 7443) = 960 samples, trigger in window = 240, flags = {'incomplete': False, 'clipped_a': None, 'clipped_b': None}

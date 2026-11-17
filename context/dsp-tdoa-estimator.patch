@@ -1,0 +1,1378 @@
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+index 15a8d0d..47f8ba1 100644
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -29,5 +29,12 @@ set(DEPLOY_DIR "$ENV{HOME}/ensc351/public/myApps")
+ 
+ # Which folders to build
+ add_subdirectory(common)
++add_subdirectory(dsp)
+ add_subdirectory(node)
+ add_subdirectory(master)
++
++# Unit tests only build for the host (cross-compiled binaries can't run here)
++if(NOT CMAKE_CROSSCOMPILING)
++  enable_testing()
++  add_subdirectory(dsp/tests)
++endif()
+diff --git a/README.md b/README.md
+index 13d5cf6..e722c81 100644
+--- a/README.md
++++ b/README.md
+@@ -7,6 +7,8 @@ Several BeagleY-AI "nodes" each estimate the direction of a sound and report it
+ 
+ - `node/`: the executable that runs on each node board
+ - `master/`: the executable that runs on the master board
++- `common/`: code shared by node and master (wire protocol)
++- `dsp/`: TDOA / direction estimator library and its host tests (see `dsp/README.md`)
+ 
+ ## Building
+ 
+diff --git a/dsp/CMakeLists.txt b/dsp/CMakeLists.txt
+new file mode 100644
+index 0000000..5b0280a
+--- /dev/null
++++ b/dsp/CMakeLists.txt
+@@ -0,0 +1,16 @@
++# CMakeList.txt for dsp
++#   Build a library (`dsp`) with the TDOA / direction estimator
++#   Use header as: #include "dsp/tdoa.h"
++
++file(GLOB MY_SOURCES "src/*.c")
++
++add_library(dsp STATIC ${MY_SOURCES})
++
++target_include_directories(dsp PUBLIC include)
++
++# Math library (sqrt, asin, hypot, ...)
++target_link_libraries(dsp PUBLIC m)
++
++# Command-line tool: run the estimator on a window exported to a file
++add_executable(tdoa_cli tools/tdoa_cli.c)
++target_link_libraries(tdoa_cli PRIVATE dsp)
+diff --git a/dsp/README.md b/dsp/README.md
+new file mode 100644
+index 0000000..79c80e4
+--- /dev/null
++++ b/dsp/README.md
+@@ -0,0 +1,84 @@
++# dsp: two-microphone TDOA and direction estimator
++
++Status: **offline draft, tested on synthetic data only.** Not yet used by `node`.
++
++Takes one aligned two-channel event window (from the detector/window extractor),
++finds the delay between the microphones by cross-correlation or GCC-PHAT, and
++returns a far-field bearing, or an explicit reason why it refused to.
++API: [`include/dsp/tdoa.h`](include/dsp/tdoa.h).
++
++## Conventions
++
++| Quantity | Definition |
++| --- | --- |
++| `tdoa_s` | `t_B - t_A` (physical arrival times). Positive: sound reached **A** first. |
++| `channel_skew_s` | `sampling_time_B - sampling_time_A` for the same frame index. |
++| Correlation lag | `r[k] = sum_n a[n] * b[n + k]`. B delayed by D samples → peak at `k = +D`. |
++| Skew correction | `tdoa_s = peak_lag / fs + channel_skew_s` |
++| Geometry | Mic A at `x = -d/2`, B at `x = +d/2`. `theta = 0` broadside, positive toward B, forward half-plane only. |
++| Angle | Far-field: `theta = asin(-c * tdoa / d)`, degrees in [-90, 90]. |
++
++The delay-sign, channel-swap and skew tests in `tests/test_tdoa.c` pin these
++down. If any convention changes, change the tests first.
++
++**MCP3208 skew:** the ADC converts one channel at a time, so B is sampled
++slightly after A (or before, depending on read order). Measure it and set
++`channel_skew_s`; don't shift the samples upstream as well, or it is corrected twice.
++
++## Results and statuses
++
++`status == DSP_TDOA_OK` is the only case with a `tdoa_s` / `angle_deg` (they
++are NaN otherwise). Refusals: bad arguments, non-finite samples, low energy, no
++peak, strongest peak outside the physical range, delay outside range, weak peak.
++Diagnostics (raw lag, peaks, peak-to-RMS, search range, RMS, skew) are filled in
++as far as processing got. `confidence` is `1 - second_peak / main_peak`: a
++heuristic, **not** a probability.
++
++Accepted range: `|tdoa| <= d/c + bound_tolerance_samples / fs`. Inside that but
++past `d/c`, the asin input is clamped and `DSP_TDOA_FLAG_CLAMPED` is set.
++
++## Things that are placeholders
++
++- **`min_peak_to_rms = 7`** was chosen from synthetic data: noise-only windows
++  never exceeded 5.7 over 200 trials, correct estimates were mostly 15-45.
++  Retune on real recordings. GCC-PHAT refuses many more noisy band-limited
++  windows than plain xcorr at this threshold, so the two methods may need
++  different values.
++- **`phat_floor = 1e-3`**, `ambiguity_ratio = 0.8`: untested on real data.
++- **Test geometry** (fs = 40 kHz, d = 0.30 m) is made up. Spacing is TBD and the
++  per-channel sample rate hasn't been measured.
++
++## Resolution: pick spacing with this in mind
++
++Max delay spans `fs * d / c` samples each side of zero. Fewer samples means
++coarser angles, especially near broadside where one sample is the biggest jump.
++
++| per-channel fs | d = 0.10 m | d = 0.20 m | d = 0.30 m |
++| --- | --- | --- | --- |
++| 10 kHz | 2.9 | 5.8 | 8.7 |
++| 20 kHz | 5.8 | 11.7 | 17.5 |
++| 40 kHz | 11.7 | 23.3 | 35.0 |
++
++(samples, c = 343 m/s). Sub-sample interpolation helps a bit but doesn't fix
++noise, skew or aliasing.
++
++## Building and running the tests (host)
++
++Tests build only when not cross-compiling. From the project root:
++
++```
++cmake -S . -B build/host -G Ninja
++cmake --build build/host --target dsp_tests
++./build/host/dsp/tests/dsp_tests
++```
++
++Building only the `dsp_tests` target avoids building `node`/`master`, whose
++post-build step copies them to `~/ensc351/public/myApps/`.
++
++## Not done yet
++
++- Plugging into `node` (event window in, `proto_event` out).
++- A command-line tool to run the estimator on the partner's exported windows.
++- Timing on the BeagleY-AI. No memory is allocated per estimate, but the
++  time-domain xcorr is O(n²) (about 1M multiply-adds for n = 1024).
++- Real recordings, skew calibration, near-field effects.
+diff --git a/dsp/include/dsp/tdoa.h b/dsp/include/dsp/tdoa.h
+new file mode 100644
+index 0000000..e256fe1
+--- /dev/null
++++ b/dsp/include/dsp/tdoa.h
+@@ -0,0 +1,122 @@
++// Two-microphone TDOA and direction estimator (draft)
++//
++// Takes one aligned two-channel event window and returns the physical arrival
++// delay between the microphones and a far-field bearing, or an explicit reason
++// why no valid result was produced. See dsp/README.md for the conventions.
++//
++// Conventions (must match the rest of the pipeline):
++//   tdoa_s  = t_B - t_A, physical arrival times. Positive: sound reached A first.
++//   skew    = sampling_time_B - sampling_time_A for the same frame index.
++//   Lag     r[k] = sum_n a[n] * b[n + k]. If b is a copy of a delayed by D
++//           samples, the peak is at k = +D.
++//   tdoa_s  = peak_lag / fs + skew
++//   Mic A at x = -d/2, mic B at x = +d/2. theta = 0 is broadside, positive
++//   toward B, in the forward half-plane: theta = asin(-c * tdoa / d).
++//
++// No memory is allocated after dsp_tdoa_create(), so estimates can run on a
++// real-time thread. One estimator must not be used by two threads at once.
++#ifndef DSP_TDOA_H
++#define DSP_TDOA_H
++
++#include <stdbool.h>
++#include <stddef.h>
++#include <stdint.h>
++
++enum dsp_tdoa_method {
++    DSP_TDOA_XCORR    = 0, // plain time-domain cross-correlation (baseline)
++    DSP_TDOA_GCC_PHAT = 1, // FFT cross-spectrum with PHAT weighting
++};
++
++enum dsp_tdoa_status {
++    DSP_TDOA_OK                = 0,
++    DSP_TDOA_ERR_ARGS          = 1, // null pointer, bad length, or window shorter than the lag range
++    DSP_TDOA_ERR_NONFINITE     = 2, // NaN or Inf in the samples
++    DSP_TDOA_LOW_ENERGY        = 3, // a channel's RMS is at or below min_rms
++    DSP_TDOA_NO_PEAK           = 4, // no positive correlation peak in the physical lag range
++    DSP_TDOA_PEAK_OUT_OF_RANGE = 5, // strongest peak overall is outside the physical lag range
++    DSP_TDOA_TDOA_OUT_OF_RANGE = 6, // corrected delay exceeds d/c plus tolerance
++    DSP_TDOA_WEAK_PEAK         = 7, // peak_to_rms below min_peak_to_rms (looks like noise)
++};
++
++// Diagnostic flags (do not change the status on their own)
++#define DSP_TDOA_FLAG_CLIPPED   (1u << 0) // caller reported clipping in the input window
++#define DSP_TDOA_FLAG_AMBIGUOUS (1u << 1) // second peak >= ambiguity_ratio * main peak
++#define DSP_TDOA_FLAG_AT_BOUND  (1u << 2) // chosen peak is on the edge of the allowed lag range
++#define DSP_TDOA_FLAG_CLAMPED   (1u << 3) // asin input was just past +-1 and was clamped
++
++struct dsp_tdoa_config {
++    double sample_rate_hz;          // effective PER-CHANNEL rate, not total ADC conversions/s
++    double mic_spacing_m;           // centre-to-centre spacing d
++    double speed_of_sound_mps;      // default 343 (about 20 C)
++    double channel_skew_s;          // sampling_time_B - sampling_time_A (MCP3208 reads channels in turn)
++    double bound_tolerance_samples; // slack on |tdoa| <= d/c, for quantization and calibration error
++    enum dsp_tdoa_method method;
++    bool   remove_dc;               // subtract each channel's window mean before correlating
++    bool   interpolate;             // parabolic sub-sample peak refinement
++    double min_rms;                 // per channel after DC removal, in input units; 0 only rejects exact silence
++    double ambiguity_ratio;         // in (0, 1]: flag when second peak / main peak >= this
++    double min_peak_to_rms;         // reject peaks below this many correlation RMS; 0 disables.
++                                    // Default 7 is from SYNTHETIC data (noise-only max ~5.7); retune on recordings.
++    double phat_floor;              // in [0, 1): PHAT magnitude floor relative to the largest bin
++};
++
++struct dsp_tdoa_input {
++    const float *a;   // channel A samples
++    const float *b;   // channel B samples, same frame indices as a
++    size_t n;         // samples per channel
++    bool clipped;     // set by the caller if either channel clipped
++};
++
++struct dsp_tdoa_result {
++    enum dsp_tdoa_status status;
++    uint32_t flags;           // DSP_TDOA_FLAG_*
++
++    // Only meaningful when status == DSP_TDOA_OK (NaN otherwise)
++    double tdoa_s;            // corrected physical t_B - t_A
++    double angle_deg;         // see conventions above, range [-90, 90]
++
++    // Heuristic quality in [0, 1]: 1 - second_peak / main_peak. NOT a calibrated probability.
++    double confidence;
++
++    // Diagnostics (filled in as far as processing got)
++    double raw_lag_samples;   // peak lag incl. sub-sample part, before skew correction
++    int    peak_lag;          // integer lag of the chosen (in-range) peak
++    int    global_peak_lag;   // integer lag of the strongest peak at any lag
++    int    min_lag, max_lag;  // allowed lag range that was searched
++    double peak_value;
++    double second_peak_value;
++    double global_peak_value;
++    double peak_to_rms;       // chosen peak / RMS of the whole correlation
++    double skew_applied_s;
++    double rms_a, rms_b;      // after DC removal if enabled
++};
++
++// Fill in defaults. sample_rate_hz and mic_spacing_m are set to 0 and MUST be
++// set by the caller; dsp_tdoa_create() rejects them otherwise.
++void dsp_tdoa_default_config(struct dsp_tdoa_config *cfg);
++
++// True if every config field is in range
++bool dsp_tdoa_config_valid(const struct dsp_tdoa_config *cfg);
++
++struct dsp_tdoa_estimator;
++
++// Allocates all working memory for windows up to max_samples per channel.
++// Returns NULL on an invalid config, max_samples < 2, or out of memory.
++struct dsp_tdoa_estimator *dsp_tdoa_create(const struct dsp_tdoa_config *cfg, size_t max_samples);
++void dsp_tdoa_destroy(struct dsp_tdoa_estimator *est);
++
++// Estimate the delay and direction for one window. Always fills *out when out
++// is non-NULL, and returns out->status.
++enum dsp_tdoa_status dsp_tdoa_estimate(struct dsp_tdoa_estimator *est,
++                                       const struct dsp_tdoa_input *in,
++                                       struct dsp_tdoa_result *out);
++
++// The correlation from the last estimate, for plots and debugging. Sets
++// *first_lag to the lag of element 0 and *len to the number of elements.
++// Returns NULL if no correlation has been computed yet. Valid until the next
++// estimate.
++const double *dsp_tdoa_correlation(const struct dsp_tdoa_estimator *est, int *first_lag, size_t *len);
++
++const char *dsp_tdoa_status_str(enum dsp_tdoa_status status);
++
++#endif
+diff --git a/dsp/src/tdoa.c b/dsp/src/tdoa.c
+new file mode 100644
+index 0000000..9c1cc94
+--- /dev/null
++++ b/dsp/src/tdoa.c
+@@ -0,0 +1,470 @@
++// Two-microphone TDOA and direction estimator
++#include "dsp/tdoa.h"
++
++#include <float.h>
++#include <limits.h>
++#include <math.h>
++#include <stdlib.h>
++#include <string.h>
++
++#define DSP_PI 3.14159265358979323846
++
++struct dsp_tdoa_estimator {
++    struct dsp_tdoa_config cfg;
++    size_t max_samples;
++    size_t nfft_max;
++
++    double *a, *b;              // conditioned channels [max_samples]
++    double *re_a, *im_a;        // FFT work [nfft_max]
++    double *re_b, *im_b;
++    double *cos_t, *sin_t;      // twiddles for nfft_max [nfft_max / 2]
++    double *corr;               // lags -(n-1)..(n-1) [2 * max_samples - 1]
++
++    size_t corr_len;            // valid length from the last estimate (0 = none)
++    int corr_first_lag;
++};
++
++void dsp_tdoa_default_config(struct dsp_tdoa_config *cfg)
++{
++    memset(cfg, 0, sizeof(*cfg));
++    cfg->sample_rate_hz = 0.0;
++    cfg->mic_spacing_m = 0.0;
++    cfg->speed_of_sound_mps = 343.0;
++    cfg->channel_skew_s = 0.0;
++    cfg->bound_tolerance_samples = 1.0;
++    cfg->method = DSP_TDOA_GCC_PHAT;
++    cfg->remove_dc = true;
++    cfg->interpolate = true;
++    cfg->min_rms = 0.0;
++    cfg->ambiguity_ratio = 0.8;
++    cfg->min_peak_to_rms = 7.0;
++    cfg->phat_floor = 1e-3;
++}
++
++static bool positive_finite(double v)
++{
++    return isfinite(v) && v > 0.0;
++}
++
++bool dsp_tdoa_config_valid(const struct dsp_tdoa_config *cfg)
++{
++    if (cfg == NULL) {
++        return false;
++    }
++    return positive_finite(cfg->sample_rate_hz)
++        && positive_finite(cfg->mic_spacing_m)
++        && positive_finite(cfg->speed_of_sound_mps)
++        && isfinite(cfg->channel_skew_s)
++        && isfinite(cfg->bound_tolerance_samples) && cfg->bound_tolerance_samples >= 0.0
++        && (cfg->method == DSP_TDOA_XCORR || cfg->method == DSP_TDOA_GCC_PHAT)
++        && isfinite(cfg->min_rms) && cfg->min_rms >= 0.0
++        && isfinite(cfg->ambiguity_ratio) && cfg->ambiguity_ratio > 0.0 && cfg->ambiguity_ratio <= 1.0
++        && isfinite(cfg->min_peak_to_rms) && cfg->min_peak_to_rms >= 0.0
++        && isfinite(cfg->phat_floor) && cfg->phat_floor >= 0.0 && cfg->phat_floor < 1.0;
++}
++
++static size_t next_pow2(size_t n)
++{
++    size_t p = 1;
++    while (p < n) {
++        p <<= 1;
++    }
++    return p;
++}
++
++struct dsp_tdoa_estimator *dsp_tdoa_create(const struct dsp_tdoa_config *cfg, size_t max_samples)
++{
++    // Lags are stored as int, so keep 2 * max_samples well inside INT_MAX
++    if (!dsp_tdoa_config_valid(cfg) || max_samples < 2 || max_samples > (size_t)(INT_MAX / 4)) {
++        return NULL;
++    }
++
++    struct dsp_tdoa_estimator *est = calloc(1, sizeof(*est));
++    if (est == NULL) {
++        return NULL;
++    }
++    est->cfg = *cfg;
++    est->max_samples = max_samples;
++    est->nfft_max = next_pow2(2 * max_samples - 1);
++
++    size_t nf = est->nfft_max;
++    est->a = calloc(max_samples, sizeof(double));
++    est->b = calloc(max_samples, sizeof(double));
++    est->re_a = calloc(nf, sizeof(double));
++    est->im_a = calloc(nf, sizeof(double));
++    est->re_b = calloc(nf, sizeof(double));
++    est->im_b = calloc(nf, sizeof(double));
++    est->cos_t = calloc(nf / 2, sizeof(double));
++    est->sin_t = calloc(nf / 2, sizeof(double));
++    est->corr = calloc(2 * max_samples - 1, sizeof(double));
++
++    if (!est->a || !est->b || !est->re_a || !est->im_a || !est->re_b || !est->im_b
++        || !est->cos_t || !est->sin_t || !est->corr) {
++        dsp_tdoa_destroy(est);
++        return NULL;
++    }
++
++    // Forward-transform twiddles: exp(-j 2 pi k / N)
++    for (size_t k = 0; k < nf / 2; k++) {
++        double w = 2.0 * DSP_PI * (double)k / (double)nf;
++        est->cos_t[k] = cos(w);
++        est->sin_t[k] = -sin(w);
++    }
++    return est;
++}
++
++void dsp_tdoa_destroy(struct dsp_tdoa_estimator *est)
++{
++    if (est == NULL) {
++        return;
++    }
++    free(est->a);
++    free(est->b);
++    free(est->re_a);
++    free(est->im_a);
++    free(est->re_b);
++    free(est->im_b);
++    free(est->cos_t);
++    free(est->sin_t);
++    free(est->corr);
++    free(est);
++}
++
++// In-place iterative radix-2 FFT. n is a power of two that divides nfft_max.
++// The inverse is scaled by 1/n.
++static void fft(const struct dsp_tdoa_estimator *est, double *re, double *im, size_t n, bool inverse)
++{
++    // Bit-reversal permutation
++    for (size_t i = 1, j = 0; i < n; i++) {
++        size_t bit = n >> 1;
++        for (; j & bit; bit >>= 1) {
++            j ^= bit;
++        }
++        j ^= bit;
++        if (i < j) {
++            double t = re[i]; re[i] = re[j]; re[j] = t;
++            t = im[i]; im[i] = im[j]; im[j] = t;
++        }
++    }
++
++    for (size_t len = 2; len <= n; len <<= 1) {
++        size_t half = len / 2;
++        size_t step = est->nfft_max / len;
++        for (size_t i = 0; i < n; i += len) {
++            for (size_t k = 0; k < half; k++) {
++                double wr = est->cos_t[k * step];
++                double wi = inverse ? -est->sin_t[k * step] : est->sin_t[k * step];
++                size_t p = i + k;
++                size_t q = p + half;
++                double vr = re[q] * wr - im[q] * wi;
++                double vi = re[q] * wi + im[q] * wr;
++                re[q] = re[p] - vr;
++                im[q] = im[p] - vi;
++                re[p] += vr;
++                im[p] += vi;
++            }
++        }
++    }
++
++    if (inverse) {
++        double scale = 1.0 / (double)n;
++        for (size_t i = 0; i < n; i++) {
++            re[i] *= scale;
++            im[i] *= scale;
++        }
++    }
++}
++
++// Copy one channel to double, optionally remove its mean, and return its RMS.
++// Returns false if any sample is not finite.
++static bool condition_channel(const float *src, double *dst, size_t n, bool remove_dc, double *rms)
++{
++    double sum = 0.0;
++    for (size_t i = 0; i < n; i++) {
++        if (!isfinite(src[i])) {
++            return false;
++        }
++        dst[i] = (double)src[i];
++        sum += dst[i];
++    }
++
++    double mean = remove_dc ? sum / (double)n : 0.0;
++    double sq = 0.0;
++    for (size_t i = 0; i < n; i++) {
++        dst[i] -= mean;
++        sq += dst[i] * dst[i];
++    }
++    *rms = sqrt(sq / (double)n);
++    return true;
++}
++
++// r[k] = sum_i a[i] * b[i + k], stored at corr[k + n - 1]
++static void xcorr_time(struct dsp_tdoa_estimator *est, size_t n)
++{
++    int last = (int)n - 1;
++    for (int k = -last; k <= last; k++) {
++        size_t i0 = (k < 0) ? (size_t)(-k) : 0;
++        size_t i1 = (k > 0) ? n - (size_t)k : n;
++        double s = 0.0;
++        for (size_t i = i0; i < i1; i++) {
++            s += est->a[i] * est->b[(ptrdiff_t)i + k];
++        }
++        est->corr[k + last] = s;
++    }
++}
++
++// Same lag definition as xcorr_time, via conj(A) * B with PHAT weighting.
++// Returns false if the cross-spectrum is all zero.
++static bool xcorr_gcc_phat(struct dsp_tdoa_estimator *est, size_t n, double phat_floor)
++{
++    size_t nf = next_pow2(2 * n - 1); // enough zero padding for linear correlation
++
++    for (size_t i = 0; i < nf; i++) {
++        est->re_a[i] = (i < n) ? est->a[i] : 0.0;
++        est->re_b[i] = (i < n) ? est->b[i] : 0.0;
++        est->im_a[i] = 0.0;
++        est->im_b[i] = 0.0;
++    }
++    fft(est, est->re_a, est->im_a, nf, false);
++    fft(est, est->re_b, est->im_b, nf, false);
++
++    // Cross-spectrum conj(A) * B, kept in re_a/im_a
++    double max_mag = 0.0;
++    for (size_t i = 0; i < nf; i++) {
++        double ar = est->re_a[i], ai = est->im_a[i];
++        double br = est->re_b[i], bi = est->im_b[i];
++        double xr = ar * br + ai * bi;
++        double xi = ar * bi - ai * br;
++        est->re_a[i] = xr;
++        est->im_a[i] = xi;
++        double mag = hypot(xr, xi);
++        if (mag > max_mag) {
++            max_mag = mag;
++        }
++    }
++    if (!(max_mag > 0.0)) {
++        return false;
++    }
++
++    double floor_mag = phat_floor * max_mag;
++    if (floor_mag < DBL_MIN) {
++        floor_mag = DBL_MIN;
++    }
++    for (size_t i = 0; i < nf; i++) {
++        double mag = hypot(est->re_a[i], est->im_a[i]);
++        double w = 1.0 / (mag > floor_mag ? mag : floor_mag);
++        est->re_a[i] *= w;
++        est->im_a[i] *= w;
++    }
++    fft(est, est->re_a, est->im_a, nf, true);
++
++    // Circular index -> signed lag
++    int last = (int)n - 1;
++    for (int k = -last; k <= last; k++) {
++        size_t idx = (k >= 0) ? (size_t)k : nf - (size_t)(-k);
++        est->corr[k + last] = est->re_a[idx];
++    }
++    return true;
++}
++
++static void reset_result(struct dsp_tdoa_result *out)
++{
++    memset(out, 0, sizeof(*out));
++    out->tdoa_s = NAN;
++    out->angle_deg = NAN;
++    out->raw_lag_samples = NAN;
++}
++
++enum dsp_tdoa_status dsp_tdoa_estimate(struct dsp_tdoa_estimator *est,
++                                       const struct dsp_tdoa_input *in,
++                                       struct dsp_tdoa_result *out)
++{
++    if (out == NULL) {
++        return DSP_TDOA_ERR_ARGS;
++    }
++    reset_result(out);
++
++    if (est == NULL || in == NULL || in->a == NULL || in->b == NULL
++        || in->n < 2 || in->n > est->max_samples) {
++        out->status = DSP_TDOA_ERR_ARGS;
++        return out->status;
++    }
++    est->corr_len = 0;
++
++    const struct dsp_tdoa_config *cfg = &est->cfg;
++    const size_t n = in->n;
++    const int last = (int)n - 1;
++    const double fs = cfg->sample_rate_hz;
++    const double skew = cfg->channel_skew_s;
++
++    if (in->clipped) {
++        out->flags |= DSP_TDOA_FLAG_CLIPPED;
++    }
++
++    // Allowed integer lags: physical |tdoa| <= d/c + tolerance, shifted by skew
++    const double max_tdoa = cfg->mic_spacing_m / cfg->speed_of_sound_mps
++                          + cfg->bound_tolerance_samples / fs;
++    const double lo_f = ceil((-max_tdoa - skew) * fs - 1e-9);
++    const double hi_f = floor((max_tdoa - skew) * fs + 1e-9);
++    if (lo_f < (double)-last || hi_f > (double)last || lo_f > hi_f) {
++        out->status = DSP_TDOA_ERR_ARGS; // window too short for the physical lag range
++        return out->status;
++    }
++    const int lo = (int)lo_f;
++    const int hi = (int)hi_f;
++    out->min_lag = lo;
++    out->max_lag = hi;
++
++    // Conditioning
++    if (!condition_channel(in->a, est->a, n, cfg->remove_dc, &out->rms_a)
++        || !condition_channel(in->b, est->b, n, cfg->remove_dc, &out->rms_b)) {
++        out->status = DSP_TDOA_ERR_NONFINITE;
++        return out->status;
++    }
++    if (out->rms_a <= cfg->min_rms || out->rms_b <= cfg->min_rms) {
++        out->status = DSP_TDOA_LOW_ENERGY;
++        return out->status;
++    }
++
++    // Correlation over every lag
++    if (cfg->method == DSP_TDOA_XCORR) {
++        xcorr_time(est, n);
++    } else if (!xcorr_gcc_phat(est, n, cfg->phat_floor)) {
++        out->status = DSP_TDOA_LOW_ENERGY;
++        return out->status;
++    }
++    est->corr_len = 2 * n - 1;
++    est->corr_first_lag = -last;
++    const double *r = est->corr + last; // r[k] for k in [-last, last]
++
++    // Strongest peak inside the allowed range, and anywhere
++    int p = lo;
++    for (int k = lo + 1; k <= hi; k++) {
++        if (r[k] > r[p]) {
++            p = k;
++        }
++    }
++    int g = -last;
++    for (int k = -last + 1; k <= last; k++) {
++        if (r[k] > r[g]) {
++            g = k;
++        }
++    }
++    out->peak_lag = p;
++    out->peak_value = r[p];
++    out->global_peak_lag = g;
++    out->global_peak_value = r[g];
++
++    double sq = 0.0;
++    for (int k = -last; k <= last; k++) {
++        sq += r[k] * r[k];
++    }
++    double corr_rms = sqrt(sq / (double)(2 * n - 1));
++    out->peak_to_rms = (corr_rms > 0.0) ? r[p] / corr_rms : 0.0;
++
++    // Second-highest local maximum in range, excluding the main peak's neighbours
++    double second = 0.0;
++    for (int k = lo; k <= hi; k++) {
++        if (k >= p - 1 && k <= p + 1) {
++            continue;
++        }
++        bool left_ok = (k == -last) || r[k] >= r[k - 1];
++        bool right_ok = (k == last) || r[k] >= r[k + 1];
++        if (left_ok && right_ok && r[k] > second) {
++            second = r[k];
++        }
++    }
++    out->second_peak_value = second;
++
++    if (!(r[p] > 0.0)) {
++        out->status = DSP_TDOA_NO_PEAK;
++        return out->status;
++    }
++
++    out->confidence = 1.0 - second / r[p];
++    if (out->confidence < 0.0) {
++        out->confidence = 0.0;
++    }
++    if (second >= cfg->ambiguity_ratio * r[p]) {
++        out->flags |= DSP_TDOA_FLAG_AMBIGUOUS;
++    }
++    if (p == lo || p == hi) {
++        out->flags |= DSP_TDOA_FLAG_AT_BOUND;
++    }
++
++    // Sub-sample refinement (neighbours may be just outside the allowed range)
++    double delta = 0.0;
++    if (cfg->interpolate && p > -last && p < last) {
++        double y0 = r[p - 1], y1 = r[p], y2 = r[p + 1];
++        double den = y0 - 2.0 * y1 + y2;
++        if (den < 0.0) {
++            delta = 0.5 * (y0 - y2) / den;
++            if (delta > 0.5) {
++                delta = 0.5;
++            } else if (delta < -0.5) {
++                delta = -0.5;
++            }
++        }
++    }
++    out->raw_lag_samples = (double)p + delta;
++    out->skew_applied_s = skew;
++
++    // An in-range peak does not prove the signal is physical
++    if (g != p && (g < lo || g > hi) && r[g] > r[p]) {
++        out->status = DSP_TDOA_PEAK_OUT_OF_RANGE;
++        return out->status;
++    }
++    if (out->peak_to_rms < cfg->min_peak_to_rms) {
++        out->status = DSP_TDOA_WEAK_PEAK;
++        return out->status;
++    }
++
++    double tdoa = out->raw_lag_samples / fs + skew;
++    if (fabs(tdoa) > max_tdoa) {
++        out->status = DSP_TDOA_TDOA_OUT_OF_RANGE;
++        return out->status;
++    }
++
++    double x = -cfg->speed_of_sound_mps * tdoa / cfg->mic_spacing_m;
++    if (x > 1.0) {
++        x = 1.0;
++        out->flags |= DSP_TDOA_FLAG_CLAMPED;
++    } else if (x < -1.0) {
++        x = -1.0;
++        out->flags |= DSP_TDOA_FLAG_CLAMPED;
++    }
++
++    out->tdoa_s = tdoa;
++    out->angle_deg = asin(x) * 180.0 / DSP_PI;
++    out->status = DSP_TDOA_OK;
++    return out->status;
++}
++
++const double *dsp_tdoa_correlation(const struct dsp_tdoa_estimator *est, int *first_lag, size_t *len)
++{
++    if (est == NULL || est->corr_len == 0) {
++        return NULL;
++    }
++    if (first_lag != NULL) {
++        *first_lag = est->corr_first_lag;
++    }
++    if (len != NULL) {
++        *len = est->corr_len;
++    }
++    return est->corr;
++}
++
++const char *dsp_tdoa_status_str(enum dsp_tdoa_status status)
++{
++    switch (status) {
++    case DSP_TDOA_OK:                return "ok";
++    case DSP_TDOA_ERR_ARGS:          return "bad arguments";
++    case DSP_TDOA_ERR_NONFINITE:     return "non-finite sample";
++    case DSP_TDOA_LOW_ENERGY:        return "low energy";
++    case DSP_TDOA_NO_PEAK:           return "no correlation peak";
++    case DSP_TDOA_PEAK_OUT_OF_RANGE: return "strongest peak outside physical range";
++    case DSP_TDOA_TDOA_OUT_OF_RANGE: return "delay outside physical range";
++    case DSP_TDOA_WEAK_PEAK:         return "weak correlation peak";
++    }
++    return "unknown";
++}
+diff --git a/dsp/tests/CMakeLists.txt b/dsp/tests/CMakeLists.txt
+new file mode 100644
+index 0000000..5ac29e2
+--- /dev/null
++++ b/dsp/tests/CMakeLists.txt
+@@ -0,0 +1,5 @@
++# Host-only unit tests for the dsp library
++
++add_executable(dsp_tests test_tdoa.c)
++target_link_libraries(dsp_tests PRIVATE dsp)
++add_test(NAME dsp_tests COMMAND dsp_tests)
+diff --git a/dsp/tests/test_tdoa.c b/dsp/tests/test_tdoa.c
+new file mode 100644
+index 0000000..b955933
+--- /dev/null
++++ b/dsp/tests/test_tdoa.c
+@@ -0,0 +1,386 @@
++// Offline tests for the TDOA estimator, using synthetic windows with known
++// delays. Runs on the build host. Exit code is the number of failed checks.
++//
++// Test geometry: fs = 40 kHz, d = 0.30 m, c = 343 m/s, so d/c is about
++// 35.0 samples. These are placeholders until the real spacing and per-channel
++// rate are measured.
++#include "dsp/tdoa.h"
++
++#include <math.h>
++#include <stdio.h>
++#include <string.h>
++
++#define FS      40000.0
++#define SPACING 0.30
++#define C_SOUND 343.0
++
++#define N       1024           // window length per channel
++#define MARGIN  128            // max |delay| the generator supports
++#define SRC_LEN (N + 2 * MARGIN)
++#define ONSET   (MARGIN + 300) // impact starts ~300 samples into the window
++
++static int failures;
++static int checks;
++
++#define CHECK(cond, ...)                                           \
++    do {                                                           \
++        checks++;                                                  \
++        if (!(cond)) {                                             \
++            failures++;                                            \
++            printf("FAIL %s:%d: %s -- ", __FILE__, __LINE__, #cond); \
++            printf(__VA_ARGS__);                                   \
++            printf("\n");                                          \
++        }                                                          \
++    } while (0)
++
++// Small deterministic generator so results are reproducible everywhere
++static unsigned long rng_state;
++static double urand(void)
++{
++    rng_state = (rng_state * 1664525ul + 1013904223ul) & 0xFFFFFFFFul;
++    return (double)(rng_state >> 8) / 16777216.0 * 2.0 - 1.0;
++}
++
++// Decaying noise burst, a rough stand-in for an impact. smooth > 1 applies a
++// moving average so the burst is band-limited like real microphone data.
++static void make_source(double *src, unsigned long seed, int smooth)
++{
++    rng_state = seed;
++    for (int i = 0; i < SRC_LEN; i++) {
++        src[i] = (i < ONSET) ? 0.0 : urand() * exp(-(double)(i - ONSET) / 80.0);
++    }
++    for (int pass = 1; pass < smooth; pass++) {
++        for (int i = SRC_LEN - 1; i > 0; i--) {
++            src[i] = 0.5 * (src[i] + src[i - 1]);
++        }
++    }
++}
++
++// a[i] = src[i], b[i] = src[i - delay]: B hears the same thing `delay` samples later
++static void make_pair(float *a, float *b, int delay, double noise, unsigned long seed, int smooth)
++{
++    static double src[SRC_LEN];
++    make_source(src, seed, smooth);
++    rng_state = seed ^ 0x5A5A5Aul;
++    for (int i = 0; i < N; i++) {
++        a[i] = (float)(src[i + MARGIN] + noise * urand());
++        b[i] = (float)(src[i + MARGIN - delay] + noise * urand());
++    }
++}
++
++static struct dsp_tdoa_config test_config(enum dsp_tdoa_method method)
++{
++    struct dsp_tdoa_config cfg;
++    dsp_tdoa_default_config(&cfg);
++    cfg.sample_rate_hz = FS;
++    cfg.mic_spacing_m = SPACING;
++    cfg.speed_of_sound_mps = C_SOUND;
++    cfg.method = method;
++    return cfg;
++}
++
++static double expected_angle(double tdoa)
++{
++    return asin(-C_SOUND * tdoa / SPACING) * 180.0 / 3.14159265358979323846;
++}
++
++static struct dsp_tdoa_result run(struct dsp_tdoa_estimator *est, const float *a, const float *b, size_t n)
++{
++    struct dsp_tdoa_input in = { .a = a, .b = b, .n = n, .clipped = false };
++    struct dsp_tdoa_result res;
++    dsp_tdoa_estimate(est, &in, &res);
++    return res;
++}
++
++static const char *method_name(enum dsp_tdoa_method m)
++{
++    return m == DSP_TDOA_XCORR ? "xcorr" : "gcc-phat";
++}
++
++static float a[N], b[N];
++
++// Positive, zero and negative delays; sign, magnitude and angle
++static void test_known_delays(enum dsp_tdoa_method m)
++{
++    struct dsp_tdoa_config cfg = test_config(m);
++    struct dsp_tdoa_estimator *est = dsp_tdoa_create(&cfg, N);
++    const int delays[] = { -30, -12, -1, 0, 1, 7, 12, 30, 34 };
++
++    for (size_t i = 0; i < sizeof(delays) / sizeof(delays[0]); i++) {
++        for (int smooth = 1; smooth <= 3; smooth += 2) {
++            int d = delays[i];
++            make_pair(a, b, d, 0.02, 1000u + (unsigned long)i, smooth);
++            struct dsp_tdoa_result r = run(est, a, b, N);
++            double want_tdoa = d / FS;
++            CHECK(r.status == DSP_TDOA_OK, "%s delay %d smooth %d: %s",
++                  method_name(m), d, smooth, dsp_tdoa_status_str(r.status));
++            CHECK(r.peak_lag == d, "%s delay %d smooth %d: peak lag %d",
++                  method_name(m), d, smooth, r.peak_lag);
++            CHECK(fabs(r.raw_lag_samples - d) < 0.25, "%s delay %d: raw lag %.3f",
++                  method_name(m), d, r.raw_lag_samples);
++            CHECK(fabs(r.tdoa_s - want_tdoa) < 0.25 / FS, "%s delay %d: tdoa %g want %g",
++                  method_name(m), d, r.tdoa_s, want_tdoa);
++            CHECK(fabs(r.angle_deg - expected_angle(r.tdoa_s)) < 1e-9, "%s delay %d: angle %f",
++                  method_name(m), d, r.angle_deg);
++            // A first (d > 0) means the source is on A's side: negative angle
++            CHECK(d == 0 ? fabs(r.angle_deg) < 0.5 : (d > 0) == (r.angle_deg < 0.0),
++                  "%s delay %d: angle sign %f", method_name(m), d, r.angle_deg);
++            CHECK(r.confidence >= 0.0 && r.confidence <= 1.0, "confidence %f", r.confidence);
++        }
++    }
++    dsp_tdoa_destroy(est);
++}
++
++// Swapping the channels must negate the delay
++static void test_channel_swap(enum dsp_tdoa_method m)
++{
++    struct dsp_tdoa_config cfg = test_config(m);
++    struct dsp_tdoa_estimator *est = dsp_tdoa_create(&cfg, N);
++    make_pair(a, b, 9, 0.02, 77u, 2);
++    struct dsp_tdoa_result fwd = run(est, a, b, N);
++    struct dsp_tdoa_result rev = run(est, b, a, N);
++    CHECK(fwd.status == DSP_TDOA_OK && rev.status == DSP_TDOA_OK, "%s swap statuses %d %d",
++          method_name(m), fwd.status, rev.status);
++    CHECK(fwd.peak_lag == 9 && rev.peak_lag == -9, "%s swap lags %d %d",
++          method_name(m), fwd.peak_lag, rev.peak_lag);
++    CHECK(fabs(fwd.angle_deg + rev.angle_deg) < 0.5, "%s swap angles %f %f",
++          method_name(m), fwd.angle_deg, rev.angle_deg);
++    dsp_tdoa_destroy(est);
++}
++
++// MCP3208-style skew: B is sampled 3 samples after A, physical delay 10.
++// The recorded data then only shows a 7-sample shift.
++static void test_skew(enum dsp_tdoa_method m)
++{
++    struct dsp_tdoa_config cfg = test_config(m);
++    cfg.channel_skew_s = 3.0 / FS;
++    struct dsp_tdoa_estimator *est = dsp_tdoa_create(&cfg, N);
++    make_pair(a, b, 10 - 3, 0.02, 31u, 2);
++    struct dsp_tdoa_result r = run(est, a, b, N);
++    CHECK(r.status == DSP_TDOA_OK, "%s skew: %s", method_name(m), dsp_tdoa_status_str(r.status));
++    CHECK(r.peak_lag == 7, "%s skew: raw lag %d", method_name(m), r.peak_lag);
++    CHECK(fabs(r.tdoa_s - 10.0 / FS) < 0.25 / FS, "%s skew: tdoa %g", method_name(m), r.tdoa_s);
++    CHECK(fabs(r.skew_applied_s - 3.0 / FS) < 1e-12, "%s skew applied %g", method_name(m), r.skew_applied_s);
++    // Search range shifts with skew: physical +-35.99 samples becomes -38..32
++    CHECK(r.min_lag == -38 && r.max_lag == 32, "%s skew range %d..%d", method_name(m), r.min_lag, r.max_lag);
++    dsp_tdoa_destroy(est);
++
++    // Without the correction the same data gives the uncorrected delay
++    cfg.channel_skew_s = 0.0;
++    est = dsp_tdoa_create(&cfg, N);
++    r = run(est, a, b, N);
++    CHECK(fabs(r.tdoa_s - 7.0 / FS) < 0.25 / FS, "%s no-skew tdoa %g", method_name(m), r.tdoa_s);
++    dsp_tdoa_destroy(est);
++}
++
++// d/c is 34.99 samples; tolerance is 1 sample
++static void test_physical_limits(enum dsp_tdoa_method m)
++{
++    struct dsp_tdoa_config cfg = test_config(m);
++    cfg.interpolate = false; // keep the boundary test on whole samples
++    struct dsp_tdoa_estimator *est = dsp_tdoa_create(&cfg, N);
++
++    // Just past d/c but within tolerance: accepted, clamped to -90 degrees
++    make_pair(a, b, 35, 0.02, 55u, 1);
++    struct dsp_tdoa_result r = run(est, a, b, N);
++    CHECK(r.status == DSP_TDOA_OK, "%s delay 35: %s", method_name(m), dsp_tdoa_status_str(r.status));
++    CHECK(r.flags & DSP_TDOA_FLAG_CLAMPED, "%s delay 35: expected clamp flag, flags %x", method_name(m), r.flags);
++    CHECK(fabs(r.angle_deg + 90.0) < 1e-9, "%s delay 35: angle %f", method_name(m), r.angle_deg);
++
++    // Far outside: strongest peak is out of range and must not become an angle
++    make_pair(a, b, -60, 0.02, 56u, 1);
++    r = run(est, a, b, N);
++    CHECK(r.status == DSP_TDOA_PEAK_OUT_OF_RANGE, "%s delay -60: %s", method_name(m), dsp_tdoa_status_str(r.status));
++    CHECK(r.global_peak_lag == -60, "%s delay -60: global lag %d", method_name(m), r.global_peak_lag);
++    CHECK(isnan(r.angle_deg) && isnan(r.tdoa_s), "%s delay -60: angle should be NaN", method_name(m));
++    dsp_tdoa_destroy(est);
++}
++
++// A DC offset on one channel changes nothing when DC removal is on
++static void test_dc_offset(enum dsp_tdoa_method m)
++{
++    struct dsp_tdoa_config cfg = test_config(m);
++    struct dsp_tdoa_estimator *est = dsp_tdoa_create(&cfg, N);
++    make_pair(a, b, -14, 0.02, 9u, 2);
++    for (int i = 0; i < N; i++) {
++        a[i] += 1000.0f;
++    }
++    struct dsp_tdoa_result r = run(est, a, b, N);
++    CHECK(r.status == DSP_TDOA_OK && r.peak_lag == -14, "%s dc offset: %s lag %d",
++          method_name(m), dsp_tdoa_status_str(r.status), r.peak_lag);
++    dsp_tdoa_destroy(est);
++}
++
++// Both methods find the same lag on identical data
++static void test_methods_agree(void)
++{
++    struct dsp_tdoa_config cx = test_config(DSP_TDOA_XCORR);
++    struct dsp_tdoa_config cg = test_config(DSP_TDOA_GCC_PHAT);
++    struct dsp_tdoa_estimator *ex = dsp_tdoa_create(&cx, N);
++    struct dsp_tdoa_estimator *eg = dsp_tdoa_create(&cg, N);
++    for (int d = -34; d <= 34; d += 2) {
++        make_pair(a, b, d, 0.05, 400u + (unsigned long)(d + 40), 2);
++        struct dsp_tdoa_result rx = run(ex, a, b, N);
++        struct dsp_tdoa_result rg = run(eg, a, b, N);
++        CHECK(rx.peak_lag == d && rg.peak_lag == d, "delay %d: xcorr %d gcc %d", d, rx.peak_lag, rg.peak_lag);
++    }
++    dsp_tdoa_destroy(ex);
++    dsp_tdoa_destroy(eg);
++}
++
++// Silence, one dead channel, and noise with no impact
++static void test_no_event(enum dsp_tdoa_method m)
++{
++    struct dsp_tdoa_config cfg = test_config(m);
++    struct dsp_tdoa_estimator *est = dsp_tdoa_create(&cfg, N);
++
++    memset(a, 0, sizeof(a));
++    memset(b, 0, sizeof(b));
++    struct dsp_tdoa_result r = run(est, a, b, N);
++    CHECK(r.status == DSP_TDOA_LOW_ENERGY, "%s silence: %s", method_name(m), dsp_tdoa_status_str(r.status));
++    CHECK(isnan(r.angle_deg), "%s silence: angle not NaN", method_name(m));
++
++    // Constant (DC only) is silence after DC removal
++    for (int i = 0; i < N; i++) {
++        a[i] = 512.0f;
++        b[i] = 2048.0f;
++    }
++    r = run(est, a, b, N);
++    CHECK(r.status == DSP_TDOA_LOW_ENERGY, "%s constant: %s", method_name(m), dsp_tdoa_status_str(r.status));
++
++    make_pair(a, b, 5, 0.0, 3u, 1);
++    memset(b, 0, sizeof(b));
++    r = run(est, a, b, N);
++    CHECK(r.status == DSP_TDOA_LOW_ENERGY, "%s dead channel B: %s", method_name(m), dsp_tdoa_status_str(r.status));
++
++    // Independent noise on each channel: must never produce a valid result
++    int valid = 0;
++    for (unsigned long seed = 1; seed <= 200; seed++) {
++        rng_state = seed * 7919u;
++        for (int i = 0; i < N; i++) {
++            a[i] = (float)urand();
++            b[i] = (float)urand();
++        }
++        r = run(est, a, b, N);
++        CHECK(isfinite(r.peak_to_rms) && isfinite(r.confidence), "%s noise seed %lu: non-finite diagnostics",
++              method_name(m), seed);
++        if (r.status == DSP_TDOA_OK) {
++            valid++;
++        }
++    }
++    CHECK(valid == 0, "%s noise only: %d/200 windows reported valid", method_name(m), valid);
++    dsp_tdoa_destroy(est);
++}
++
++// Heavy noise: the estimator may refuse, but must not report a wrong delay as valid
++static void test_noisy_impacts(enum dsp_tdoa_method m)
++{
++    struct dsp_tdoa_config cfg = test_config(m);
++    struct dsp_tdoa_estimator *est = dsp_tdoa_create(&cfg, N);
++    const double noises[] = { 0.1, 0.3, 0.6 };
++    for (size_t ni = 0; ni < 3; ni++) {
++        for (int smooth = 1; smooth <= 3; smooth += 2) {
++            int ok = 0, wrong = 0;
++            for (unsigned long seed = 1; seed <= 100; seed++) {
++                int d = (int)(seed % 69) - 34;
++                make_pair(a, b, d, noises[ni], seed, smooth);
++                struct dsp_tdoa_result r = run(est, a, b, N);
++                if (r.status == DSP_TDOA_OK) {
++                    ok++;
++                    if (fabs(r.raw_lag_samples - d) > 1.0) {
++                        wrong++;
++                    }
++                }
++            }
++            printf("  %-8s noise %.1f smooth %d: %3d/100 valid, %d valid-but-wrong\n",
++                   method_name(m), noises[ni], smooth, ok, wrong);
++            CHECK(wrong == 0, "%s noise %.1f smooth %d: %d confident wrong delays",
++                  method_name(m), noises[ni], smooth, wrong);
++        }
++    }
++    dsp_tdoa_destroy(est);
++}
++
++static void test_bad_input(void)
++{
++    struct dsp_tdoa_config cfg = test_config(DSP_TDOA_GCC_PHAT);
++    struct dsp_tdoa_estimator *est = dsp_tdoa_create(&cfg, N);
++    struct dsp_tdoa_result r;
++    make_pair(a, b, 4, 0.02, 12u, 1);
++
++    struct dsp_tdoa_input in = { .a = a, .b = NULL, .n = N, .clipped = false };
++    CHECK(dsp_tdoa_estimate(est, &in, &r) == DSP_TDOA_ERR_ARGS, "null b");
++    CHECK(isnan(r.angle_deg), "null b: angle not NaN");
++    in.b = b;
++    in.n = 0;
++    CHECK(dsp_tdoa_estimate(est, &in, &r) == DSP_TDOA_ERR_ARGS, "n = 0");
++    in.n = N + 1;
++    CHECK(dsp_tdoa_estimate(est, &in, &r) == DSP_TDOA_ERR_ARGS, "n > max");
++    in.n = 20; // shorter than the +-36 sample physical lag range
++    CHECK(dsp_tdoa_estimate(est, &in, &r) == DSP_TDOA_ERR_ARGS, "window too short");
++    in.n = N;
++    CHECK(dsp_tdoa_estimate(NULL, &in, &r) == DSP_TDOA_ERR_ARGS, "null estimator");
++    CHECK(dsp_tdoa_estimate(est, NULL, &r) == DSP_TDOA_ERR_ARGS, "null input");
++    CHECK(dsp_tdoa_estimate(est, &in, NULL) == DSP_TDOA_ERR_ARGS, "null result");
++
++    a[100] = NAN;
++    CHECK(dsp_tdoa_estimate(est, &in, &r) == DSP_TDOA_ERR_NONFINITE, "NaN sample");
++    a[100] = INFINITY;
++    CHECK(dsp_tdoa_estimate(est, &in, &r) == DSP_TDOA_ERR_NONFINITE, "Inf sample");
++    a[100] = 0.0f;
++
++    // Clipping is passed through as a flag
++    in.clipped = true;
++    CHECK(dsp_tdoa_estimate(est, &in, &r) == DSP_TDOA_OK && (r.flags & DSP_TDOA_FLAG_CLIPPED), "clip flag");
++    dsp_tdoa_destroy(est);
++
++    // Invalid configurations are refused
++    struct dsp_tdoa_config bad;
++    dsp_tdoa_default_config(&bad);
++    CHECK(dsp_tdoa_create(&bad, N) == NULL, "defaults without fs/spacing must be refused");
++    bad = test_config(DSP_TDOA_GCC_PHAT);
++    bad.mic_spacing_m = -0.1;
++    CHECK(dsp_tdoa_create(&bad, N) == NULL, "negative spacing");
++    bad = test_config(DSP_TDOA_GCC_PHAT);
++    bad.speed_of_sound_mps = NAN;
++    CHECK(dsp_tdoa_create(&bad, N) == NULL, "NaN speed of sound");
++    bad = test_config(DSP_TDOA_GCC_PHAT);
++    CHECK(dsp_tdoa_create(&bad, 1) == NULL, "max_samples = 1");
++    CHECK(dsp_tdoa_create(NULL, N) == NULL, "null config");
++}
++
++// Correlation export for plotting has the documented shape
++static void test_correlation_export(void)
++{
++    struct dsp_tdoa_config cfg = test_config(DSP_TDOA_XCORR);
++    struct dsp_tdoa_estimator *est = dsp_tdoa_create(&cfg, N);
++    int first = 0;
++    size_t len = 0;
++    CHECK(dsp_tdoa_correlation(est, &first, &len) == NULL, "no correlation before first estimate");
++    make_pair(a, b, 6, 0.0, 5u, 1);
++    struct dsp_tdoa_result r = run(est, a, b, N);
++    const double *c = dsp_tdoa_correlation(est, &first, &len);
++    CHECK(c != NULL && first == -(N - 1) && len == 2 * N - 1, "shape first %d len %zu", first, len);
++    CHECK(c != NULL && c[6 - first] == r.peak_value, "peak value at lag 6");
++    dsp_tdoa_destroy(est);
++}
++
++int main(void)
++{
++    const enum dsp_tdoa_method methods[] = { DSP_TDOA_XCORR, DSP_TDOA_GCC_PHAT };
++    for (size_t i = 0; i < 2; i++) {
++        test_known_delays(methods[i]);
++        test_channel_swap(methods[i]);
++        test_skew(methods[i]);
++        test_physical_limits(methods[i]);
++        test_dc_offset(methods[i]);
++        test_no_event(methods[i]);
++        test_noisy_impacts(methods[i]);
++    }
++    test_methods_agree();
++    test_bad_input();
++    test_correlation_export();
++
++    printf("%d/%d checks passed\n", checks - failures, checks);
++    return failures;
++}
+diff --git a/dsp/tools/tdoa_cli.c b/dsp/tools/tdoa_cli.c
+new file mode 100644
+index 0000000..70e896a
+--- /dev/null
++++ b/dsp/tools/tdoa_cli.c
+@@ -0,0 +1,223 @@
++// tdoa_cli: run the TDOA estimator on one two-channel window read from a file
++//
++// Usage:
++//   tdoa_cli --fs HZ --spacing M [--skew S] [--c MPS] [--method xcorr|gcc]
++//            [--no-dc] [--no-interp] [--min-psr X] FILE
++//
++// FILE has one sample pair per line: "a,b" (commas, spaces, tabs or
++// semicolons). Lines starting with '#' and a non-numeric header are skipped.
++// Use "-" for stdin. Prints one JSON object on stdout. Exit code is 0 when the
++// estimate is valid, 1 when the estimator refused, 2 on a usage or file error.
++#include "dsp/tdoa.h"
++
++#include <math.h>
++#include <stdio.h>
++#include <stdlib.h>
++#include <string.h>
++
++#define MAX_LINE    256
++#define MAX_SAMPLES (1u << 20)
++
++static void usage(const char *prog)
++{
++    fprintf(stderr,
++            "Usage: %s --fs HZ --spacing M [--skew S] [--c MPS] [--method xcorr|gcc]\n"
++            "          [--no-dc] [--no-interp] [--min-psr X] FILE\n"
++            "FILE: one 'a,b' pair per line, '-' for stdin\n", prog);
++}
++
++static bool parse_double(const char *text, double *out)
++{
++    char *end = NULL;
++    double v = strtod(text, &end);
++    if (end == text || *end != '\0' || !isfinite(v)) {
++        return false;
++    }
++    *out = v;
++    return true;
++}
++
++// Reads pairs into growing arrays. Returns the count, or 0 on error.
++static size_t read_pairs(FILE *f, float **pa, float **pb)
++{
++    size_t n = 0, cap = 0;
++    float *a = NULL, *b = NULL;
++    char line[MAX_LINE];
++    size_t lineno = 0;
++
++    while (fgets(line, sizeof(line), f) != NULL) {
++        lineno++;
++        char *p = line;
++        while (*p == ' ' || *p == '\t') {
++            p++;
++        }
++        if (*p == '#' || *p == '\n' || *p == '\r' || *p == '\0') {
++            continue;
++        }
++        char *end1 = NULL, *end2 = NULL;
++        double va = strtod(p, &end1);
++        char *q = end1;
++        while (*q == ',' || *q == ' ' || *q == '\t' || *q == ';') {
++            q++;
++        }
++        double vb = strtod(q, &end2);
++        if (end1 == p || end2 == q) {
++            if (n == 0) {
++                continue; // header line
++            }
++            fprintf(stderr, "line %zu: expected two numbers\n", lineno);
++            free(a);
++            free(b);
++            return 0;
++        }
++        if (n == cap) {
++            size_t ncap = cap ? cap * 2 : 1024;
++            if (ncap > MAX_SAMPLES) {
++                fprintf(stderr, "more than %u samples\n", MAX_SAMPLES);
++                free(a);
++                free(b);
++                return 0;
++            }
++            float *na = realloc(a, ncap * sizeof(*a));
++            float *nb = realloc(b, ncap * sizeof(*b));
++            if (na == NULL || nb == NULL) {
++                free(na ? na : a);
++                free(nb ? nb : b);
++                fprintf(stderr, "out of memory\n");
++                return 0;
++            }
++            a = na;
++            b = nb;
++            cap = ncap;
++        }
++        a[n] = (float)va;
++        b[n] = (float)vb;
++        n++;
++    }
++    *pa = a;
++    *pb = b;
++    return n;
++}
++
++// JSON has no NaN, so print null instead
++static void json_num(const char *key, double v, bool last)
++{
++    if (isfinite(v)) {
++        printf("  \"%s\": %.9g%s\n", key, v, last ? "" : ",");
++    } else {
++        printf("  \"%s\": null%s\n", key, last ? "" : ",");
++    }
++}
++
++int main(int argc, char *argv[])
++{
++    struct dsp_tdoa_config cfg;
++    dsp_tdoa_default_config(&cfg);
++    const char *path = NULL;
++
++    for (int i = 1; i < argc; i++) {
++        const char *arg = argv[i];
++        const char *val = (i + 1 < argc) ? argv[i + 1] : NULL;
++        double *target = NULL;
++        if (strcmp(arg, "--fs") == 0) {
++            target = &cfg.sample_rate_hz;
++        } else if (strcmp(arg, "--spacing") == 0) {
++            target = &cfg.mic_spacing_m;
++        } else if (strcmp(arg, "--skew") == 0) {
++            target = &cfg.channel_skew_s;
++        } else if (strcmp(arg, "--c") == 0) {
++            target = &cfg.speed_of_sound_mps;
++        } else if (strcmp(arg, "--min-psr") == 0) {
++            target = &cfg.min_peak_to_rms;
++        } else if (strcmp(arg, "--method") == 0 && val != NULL) {
++            if (strcmp(val, "xcorr") == 0) {
++                cfg.method = DSP_TDOA_XCORR;
++            } else if (strcmp(val, "gcc") == 0) {
++                cfg.method = DSP_TDOA_GCC_PHAT;
++            } else {
++                usage(argv[0]);
++                return 2;
++            }
++            i++;
++            continue;
++        } else if (strcmp(arg, "--no-dc") == 0) {
++            cfg.remove_dc = false;
++            continue;
++        } else if (strcmp(arg, "--no-interp") == 0) {
++            cfg.interpolate = false;
++            continue;
++        } else if (path == NULL && (arg[0] != '-' || strcmp(arg, "-") == 0)) {
++            path = arg;
++            continue;
++        } else {
++            usage(argv[0]);
++            return 2;
++        }
++        if (val == NULL || !parse_double(val, target)) {
++            fprintf(stderr, "%s needs a number\n", arg);
++            return 2;
++        }
++        i++;
++    }
++    if (path == NULL || !dsp_tdoa_config_valid(&cfg)) {
++        usage(argv[0]);
++        if (path != NULL) {
++            fprintf(stderr, "invalid settings (--fs and --spacing are required)\n");
++        }
++        return 2;
++    }
++
++    FILE *f = (strcmp(path, "-") == 0) ? stdin : fopen(path, "r");
++    if (f == NULL) {
++        perror(path);
++        return 2;
++    }
++    float *a = NULL, *b = NULL;
++    size_t n = read_pairs(f, &a, &b);
++    if (f != stdin) {
++        fclose(f);
++    }
++    if (n < 2) {
++        fprintf(stderr, "%s: need at least 2 sample pairs\n", path);
++        free(a);
++        free(b);
++        return 2;
++    }
++
++    struct dsp_tdoa_estimator *est = dsp_tdoa_create(&cfg, n);
++    if (est == NULL) {
++        fprintf(stderr, "could not create estimator\n");
++        free(a);
++        free(b);
++        return 2;
++    }
++    struct dsp_tdoa_input in = { .a = a, .b = b, .n = n, .clipped = false };
++    struct dsp_tdoa_result r;
++    dsp_tdoa_estimate(est, &in, &r);
++
++    printf("{\n");
++    printf("  \"status\": \"%s\",\n", dsp_tdoa_status_str(r.status));
++    printf("  \"valid\": %s,\n", r.status == DSP_TDOA_OK ? "true" : "false");
++    printf("  \"method\": \"%s\",\n", cfg.method == DSP_TDOA_XCORR ? "xcorr" : "gcc-phat");
++    printf("  \"samples\": %zu,\n", n);
++    json_num("sample_rate_hz", cfg.sample_rate_hz, false);
++    json_num("mic_spacing_m", cfg.mic_spacing_m, false);
++    json_num("channel_skew_s", cfg.channel_skew_s, false);
++    json_num("tdoa_s", r.tdoa_s, false);
++    json_num("angle_deg", r.angle_deg, false);
++    json_num("confidence", r.confidence, false);
++    json_num("raw_lag_samples", r.raw_lag_samples, false);
++    printf("  \"peak_lag\": %d,\n", r.peak_lag);
++    printf("  \"global_peak_lag\": %d,\n", r.global_peak_lag);
++    printf("  \"min_lag\": %d,\n", r.min_lag);
++    printf("  \"max_lag\": %d,\n", r.max_lag);
++    json_num("peak_to_rms", r.peak_to_rms, false);
++    json_num("second_peak_ratio", r.peak_value > 0.0 ? r.second_peak_value / r.peak_value : NAN, false);
++    printf("  \"flags\": %u\n", (unsigned)r.flags);
++    printf("}\n");
++
++    dsp_tdoa_destroy(est);
++    free(a);
++    free(b);
++    return r.status == DSP_TDOA_OK ? 0 : 1;
++}

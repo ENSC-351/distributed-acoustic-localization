@@ -1,0 +1,45 @@
+============================= test session starts ==============================
+platform linux -- Python 3.12.3, pytest-9.2.0, pluggy-1.7.0 -- /usr/bin/python3
+cachedir: .pytest_cache
+rootdir: /mnt/user-data/outputs/dsp
+plugins: platformdirs-4.13.0
+collecting ... collected 36 items
+
+tests/test_detector.py::test_known_delay_preserved_in_window[0] PASSED   [  2%]
+tests/test_detector.py::test_known_delay_preserved_in_window[3] PASSED   [  5%]
+tests/test_detector.py::test_known_delay_preserved_in_window[7] PASSED   [  8%]
+tests/test_detector.py::test_known_delay_preserved_in_window[-5] PASSED  [ 11%]
+tests/test_detector.py::test_channel_swap_reverses_delay_sign PASSED     [ 13%]
+tests/test_detector.py::test_window_geometry_and_trigger_index PASSED    [ 16%]
+tests/test_detector.py::test_trigger_near_true_onset PASSED              [ 19%]
+tests/test_detector.py::test_no_impact_gives_invalid_result_and_no_events PASSED [ 22%]
+tests/test_detector.py::test_perfect_silence_no_nan_no_crash PASSED      [ 25%]
+tests/test_detector.py::test_low_snr_impact_still_detected PASSED        [ 27%]
+tests/test_detector.py::test_window_dc_from_pre_trigger_and_raw_untouched PASSED [ 30%]
+tests/test_detector.py::test_two_separated_impacts_give_two_events PASSED [ 33%]
+tests/test_detector.py::test_second_impact_inside_holdoff_is_suppressed PASSED [ 36%]
+tests/test_detector.py::test_one_impact_with_long_ringdown_triggers_once PASSED [ 38%]
+tests/test_detector.py::test_clipping_flag PASSED                        [ 41%]
+tests/test_detector.py::test_skew_and_spacing_passed_through_never_corrected PASSED [ 44%]
+tests/test_detector.py::test_max_delay_samples_formula PASSED            [ 47%]
+tests/test_detector.py::test_buffer_start_time_applied_to_first_sample_of_window PASSED [ 50%]
+tests/test_detector.py::test_calibrated_noise_model_detects_same_event PASSED [ 52%]
+tests/test_detector.py::test_bad_data_rejected_with_explicit_status[bad0-shape] PASSED [ 55%]
+tests/test_detector.py::test_bad_data_rejected_with_explicit_status[bad1-empty] PASSED [ 58%]
+tests/test_detector.py::test_bad_data_rejected_with_explicit_status[bad2-mismatch] PASSED [ 61%]
+tests/test_detector.py::test_bad_data_rejected_with_explicit_status[bad3-non-finite] PASSED [ 63%]
+tests/test_detector.py::test_bad_data_rejected_with_explicit_status[bad4-non-finite] PASSED [ 66%]
+tests/test_detector.py::test_bad_data_rejected_with_explicit_status[not data-numeric] PASSED [ 69%]
+tests/test_detector.py::test_bad_sample_rate_rejected[0] PASSED          [ 72%]
+tests/test_detector.py::test_bad_sample_rate_rejected[-1] PASSED         [ 75%]
+tests/test_detector.py::test_bad_sample_rate_rejected[nan] PASSED        [ 77%]
+tests/test_detector.py::test_impact_too_close_to_edge_is_invalid_and_incomplete PASSED [ 80%]
+tests/test_detector.py::test_pair_input_equals_array_input PASSED        [ 83%]
+tests/test_detector.py::test_remove_dc PASSED                            [ 86%]
+tests/test_detector.py::test_wav_roundtrip_and_detection PASSED          [ 88%]
+tests/test_detector.py::test_mono_wav_rejected PASSED                    [ 91%]
+tests/test_detector.py::test_npy_needs_fs PASSED                         [ 94%]
+tests/test_detector.py::test_save_event_writes_arrays_and_metadata PASSED [ 97%]
+tests/test_detector.py::test_testset_matches_manifest_and_cli PASSED     [100%]
+
+============================== 36 passed in 0.20s ==============================

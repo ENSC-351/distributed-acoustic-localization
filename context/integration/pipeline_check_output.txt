@@ -1,0 +1,31 @@
+case            ev expect | xcorr d=0.10: lag   status | gcc   d=0.10: lag   status | xcorr d=0.30: lag   status | gcc   d=0.30: lag   status
+Traceback (most recent call last):
+  File "C:\Users\madde\AppData\Local\Temp\claude\3f3df61aac6e7348\258a9e94-7640-43c8-bf86-0902fb2cb0bc\scratchpad\bridge\check_pipeline.py", line 52, in <module>
+    r = run_cli(csv, fs, d, m, ["--no-dc"])   # Tyler already removed DC
+  File "C:\Users\madde\AppData\Local\Temp\claude\3f3df61aac6e7348\258a9e94-7640-43c8-bf86-0902fb2cb0bc\scratchpad\bridge\check_pipeline.py", line 26, in run_cli
+    p = subprocess.run([cli, "--fs", str(fs), "--spacing", str(spacing), "--method", method,
+                        *extra, str(csv)], capture_output=True, text=True)
+  File "C:\Users\madde\AppData\Local\Programs\Python\Python313\Lib\subprocess.py", line 554, in run
+    with Popen(*popenargs, **kwargs) as process:
+         ~~~~~^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\madde\AppData\Local\Programs\Python\Python313\Lib\subprocess.py", line 1039, in __init__
+    self._execute_child(args, executable, preexec_fn, close_fds,
+    ~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+                        pass_fds, cwd, env,
+                        ^^^^^^^^^^^^^^^^^^^
+    ...<5 lines>...
+                        gid, gids, uid, umask,
+                        ^^^^^^^^^^^^^^^^^^^^^^
+                        start_new_session, process_group)
+                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\madde\AppData\Local\Programs\Python\Python313\Lib\subprocess.py", line 1554, in _execute_child
+    hp, ht, pid, tid = _winapi.CreateProcess(executable, args,
+                       ~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^
+                             # no special security
+                             ^^^^^^^^^^^^^^^^^^^^^
+    ...<4 lines>...
+                             cwd,
+                             ^^^^
+                             startupinfo)
+                             ^^^^^^^^^^^^
+FileNotFoundError: [WinError 2] The system cannot find the file specified

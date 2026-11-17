@@ -1,0 +1,145 @@
+{
+  "delay_plus7": {
+    "fs": 48000.0,
+    "wav_gain": 0.5,
+    "channel_order": [
+      "A (row 0)",
+      "B (row 1)"
+    ],
+    "generator": "synth.make_record",
+    "parameters": {
+      "delay_samples": 7,
+      "fs": 48000.0,
+      "seed": 100
+    },
+    "samples_per_channel": 9600,
+    "expected_events": 1,
+    "expected_delay_samples": 7
+  },
+  "delay_zero": {
+    "fs": 48000.0,
+    "wav_gain": 0.5,
+    "channel_order": [
+      "A (row 0)",
+      "B (row 1)"
+    ],
+    "generator": "synth.make_record",
+    "parameters": {
+      "delay_samples": 0,
+      "fs": 48000.0,
+      "seed": 101
+    },
+    "samples_per_channel": 9600,
+    "expected_events": 1,
+    "expected_delay_samples": 0
+  },
+  "delay_minus7": {
+    "fs": 48000.0,
+    "wav_gain": 0.5,
+    "channel_order": [
+      "A (row 0)",
+      "B (row 1)"
+    ],
+    "generator": "synth.make_record",
+    "parameters": {
+      "delay_samples": -7,
+      "fs": 48000.0,
+      "seed": 102
+    },
+    "samples_per_channel": 9600,
+    "expected_events": 1,
+    "expected_delay_samples": -7
+  },
+  "delay_plus3": {
+    "fs": 48000.0,
+    "wav_gain": 0.5,
+    "channel_order": [
+      "A (row 0)",
+      "B (row 1)"
+    ],
+    "generator": "synth.make_record",
+    "parameters": {
+      "delay_samples": 3,
+      "fs": 48000.0,
+      "seed": 103
+    },
+    "samples_per_channel": 9600,
+    "expected_events": 1,
+    "expected_delay_samples": 3
+  },
+  "delay_frac_2p5": {
+    "fs": 48000.0,
+    "wav_gain": 0.5,
+    "channel_order": [
+      "A (row 0)",
+      "B (row 1)"
+    ],
+    "generator": "synth.make_record",
+    "parameters": {
+      "delay_samples": 2.5,
+      "fs": 48000.0,
+      "seed": 104
+    },
+    "samples_per_channel": 9600,
+    "expected_events": 1,
+    "expected_delay_samples": 2.5
+  },
+  "low_snr": {
+    "fs": 48000.0,
+    "wav_gain": 0.5,
+    "channel_order": [
+      "A (row 0)",
+      "B (row 1)"
+    ],
+    "generator": "synth.make_record",
+    "parameters": {
+      "delay_samples": 7,
+      "amplitude": 0.4,
+      "noise_std": 0.05,
+      "fs": 48000.0,
+      "seed": 105
+    },
+    "samples_per_channel": 9600,
+    "expected_events": 1,
+    "expected_delay_samples": 7
+  },
+  "no_impact": {
+    "fs": 48000.0,
+    "wav_gain": 0.5,
+    "channel_order": [
+      "A (row 0)",
+      "B (row 1)"
+    ],
+    "generator": "synth.make_record",
+    "parameters": {
+      "impact": false,
+      "fs": 48000.0,
+      "seed": 106
+    },
+    "samples_per_channel": 9600,
+    "expected_events": 0,
+    "expected_delay_samples": null
+  },
+  "two_impacts": {
+    "fs": 48000.0,
+    "wav_gain": 0.5,
+    "channel_order": [
+      "A (row 0)",
+      "B (row 1)"
+    ],
+    "generator": "synth.make_record",
+    "parameters": {
+      "delay_samples": 7,
+      "impact_time_s": [
+        0.05,
+        0.14
+      ],
+      "duration_s": 0.25,
+      "fs": 48000.0,
+      "seed": 107
+    },
+    "samples_per_channel": 12000,
+    "expected_events": 2,
+    "expected_delay_samples": 7
+  }
+}

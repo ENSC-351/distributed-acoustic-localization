@@ -1,0 +1,18 @@
+valid / status:         True / ok
+sample rate:            48000.0 Hz (per channel)
+channel order (A, B):   ('mic0', 'mic1')
+record trigger index:   3843 (true onset 3840)
+window in record:       3603 to 4563 (960 samples)
+trigger within window:  240
+event_time_ns / clock:  1700000000075062500 CLOCK_REALTIME (first sample of window)
+channel skew / applied: None / 0.0
+mic spacing:            None (not yet measured)
+flags:                  {'incomplete': False, 'clipped_a': None, 'clipped_b': None}
+processing:
+   - detection_dc_removal(median, internal only)
+   - energy_trigger(ratio=12.0, smooth=24 samples)
+   - window(start=3603, end=4563, same indices both channels)
+   - window_dc_removal(median of pre-trigger samples, per channel)
+diagnostics:            noise floor 0.0007891, threshold 0.00947, peak/floor 827
+check: channel lag in extracted window = 7 samples (true delay B-A = 7)
+saved detection_plot.png and window_plot.png

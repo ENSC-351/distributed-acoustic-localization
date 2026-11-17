@@ -1,0 +1,14 @@
+$ ./build/host/dsp/tests/dsp_tests   (commit base ab1108a, branch dsp/tdoa-estimator, 2026-11-16 16:02)
+  xcorr    noise 0.1 smooth 1: 100/100 valid, 0 valid-but-wrong
+  xcorr    noise 0.1 smooth 3: 100/100 valid, 0 valid-but-wrong
+  xcorr    noise 0.3 smooth 1: 100/100 valid, 0 valid-but-wrong
+  xcorr    noise 0.3 smooth 3:  38/100 valid, 0 valid-but-wrong
+  xcorr    noise 0.6 smooth 1:   2/100 valid, 0 valid-but-wrong
+  xcorr    noise 0.6 smooth 3:   0/100 valid, 0 valid-but-wrong
+  gcc-phat noise 0.1 smooth 1: 100/100 valid, 0 valid-but-wrong
+  gcc-phat noise 0.1 smooth 3: 100/100 valid, 0 valid-but-wrong
+  gcc-phat noise 0.3 smooth 1: 100/100 valid, 0 valid-but-wrong
+  gcc-phat noise 0.3 smooth 3:   3/100 valid, 0 valid-but-wrong
+  gcc-phat noise 0.6 smooth 1:   1/100 valid, 0 valid-but-wrong
+  gcc-phat noise 0.6 smooth 3:   0/100 valid, 0 valid-but-wrong
+760/760 checks passed

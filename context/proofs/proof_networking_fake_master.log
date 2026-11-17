@@ -1,0 +1,23 @@
+[14:58:39.906] listening on 127.0.0.1:35177
+[14:58:40.882] 127.0.0.1:35922: connected
+[14:58:40.882] node 1: HELLO from 127.0.0.1:35922 (mics=2, build=0x0), accepted
+[14:58:41.183] 127.0.0.1:35924: connected
+[14:58:41.184] node 2: HELLO from 127.0.0.1:35924 (mics=2, build=0x0), accepted
+[14:58:41.890] node 1: HEARTBEAT synced=1 clock_err=0us dsp_alive=1 drops=0 latency=0.33ms (seq 1)
+[14:58:42.192] node 2: HEARTBEAT synced=1 clock_err=0us dsp_alive=1 drops=0 latency=0.27ms (seq 1)
+[14:58:42.899] node 1: HEARTBEAT synced=1 clock_err=0us dsp_alive=1 drops=0 latency=0.36ms (seq 2)
+[14:58:43.203] node 2: HEARTBEAT synced=1 clock_err=0us dsp_alive=1 drops=0 latency=0.26ms (seq 2)
+[14:58:43.385] node 1: EVENT #0 theta=0.0 confidence=1.00 freq=1000Hz flags=0x0 latency=0.17ms (seq 3)
+[14:58:43.688] node 2: EVENT #0 theta=0.0 confidence=1.00 freq=1000Hz flags=0x0 latency=0.31ms (seq 3)
+[14:58:44.395] node 1: HEARTBEAT synced=1 clock_err=0us dsp_alive=1 drops=0 latency=0.18ms (seq 4)
+[14:58:44.699] node 2: HEARTBEAT synced=1 clock_err=0us dsp_alive=1 drops=0 latency=0.37ms (seq 4)
+[14:58:45.408] node 1: HEARTBEAT synced=1 clock_err=0us dsp_alive=1 drops=0 latency=0.41ms (seq 5)
+[14:58:45.712] node 2: HEARTBEAT synced=1 clock_err=0us dsp_alive=1 drops=0 latency=0.19ms (seq 5)
+[14:58:45.894] node 1: EVENT #1 theta=15.0 confidence=1.00 freq=1000Hz flags=0x0 latency=0.17ms (seq 6)
+[14:58:46.196] node 2: EVENT #1 theta=15.0 confidence=1.00 freq=1000Hz flags=0x0 latency=0.17ms (seq 6)
+[14:58:46.903] node 1: HEARTBEAT synced=1 clock_err=0us dsp_alive=1 drops=0 latency=0.40ms (seq 7)
+[14:58:47.207] node 2: HEARTBEAT synced=1 clock_err=0us dsp_alive=1 drops=0 latency=0.20ms (seq 7)
+[14:58:47.914] node 1: HEARTBEAT synced=1 clock_err=0us dsp_alive=1 drops=0 latency=0.27ms (seq 8)
+[14:58:48.197] node 2: closed (node said BYE, reason 0)
+[14:58:48.399] node 1: EVENT #2 theta=30.0 confidence=1.00 freq=1000Hz flags=0x0 latency=0.27ms (seq 9)
+[14:58:48.704] node 1: closed (node said BYE, reason 0)
