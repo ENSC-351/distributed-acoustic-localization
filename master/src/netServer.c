@@ -81,6 +81,7 @@ static void closeAllClients(void);
 static void closeClient(Client_t *pClient);
 
 static bool sendHelloAck(Client_t *pClient, uint8_t status);
+static bool sendBye(Client_t *pClient, uint8_t reason);
 static bool sendMessage(Client_t *pClient, uint8_t *pMessage, uint8_t msgType, size_t payloadLen);
 
 static void *netServerThreadFn(void *pArg)
@@ -107,7 +108,7 @@ static void *netServerThreadFn(void *pArg)
 			perror("NetServer poll");
 		}
 		if (numReady > 0) {
-			for (nfds_t i = 1; i < numEntries - 1; i++) {
+			for (nfds_t i = 1; i < numEntries; i++) {
 				// Also covers POLLHUP and POLLERR: recv() then reports what went wrong
 				if (pollEntries[i].revents != 0 && pClientOfEntry[i]->state != CLIENT_FREE) {
 					readFromClient(pClientOfEntry[i]);
@@ -193,6 +194,11 @@ static int openListenSocket(uint16_t port)
 		return -1;
 	}
 
+	// Without SO_REUSEADDR, restarting the master fails with "Address already in
+	// use" for about a minute, while the old connections sit in TIME_WAIT
+	int isReuseAddr = 1;
+	setsockopt(socketFd, SOL_SOCKET, SO_REUSEADDR, &isReuseAddr, sizeof(isReuseAddr));
+
 	struct sockaddr_in address = { //bind to all interfaces, not just localhost
 		.sin_family = AF_INET, 					//IPv4
 		.sin_port = htons(port),				//host to network short byte order
@@ -241,7 +247,7 @@ static void acceptClient(void)
 static Client_t *findFreeClient(void)
 {
 	for (int i = 0; i < MAX_CLIENTS; i++) {
-		if (clients[i].state != CLIENT_FREE) {
+		if (clients[i].state == CLIENT_FREE) {
 			return &clients[i];
 		}
 	}
@@ -347,7 +353,7 @@ static bool handleSessionMessage(Client_t *pClient, const struct proto_header *p
 static void handleEvent(Client_t *pClient, const struct proto_event *pEvent)
 {
 	//printed here for now, since the localizer can't take events yet
-	printf("Node %u event %u: theta %.1f\n", pClient->nodeId, pEvent->event_id, pEvent->phi);
+	printf("Node %u event %u: theta %.1f\n", pClient->nodeId, pEvent->event_id, pEvent->theta);
 
 	EventBuffer_entry_t entry = { // create an entry to add to the event buffer, with the node ID, the time it was received, and the event itself
 		.nodeId = pClient->nodeId,
@@ -363,7 +369,7 @@ static void dropSilentClients(void)
 	//loop over all clients and check if they have been silent for too long, if so drop them
 	for (int i = 0; i < MAX_CLIENTS; i++) {
 		Client_t *pClient = &clients[i];
-		if (pClient->state != CLIENT_FREE && nowMs - pClient->lastRecvMs > PROTO_HEARTBEAT_MS) {
+		if (pClient->state != CLIENT_FREE && nowMs - pClient->lastRecvMs > PROTO_TIMEOUT_MS) {
 			fprintf(stderr, "%s sent nothing for %d ms, dropping it.\n",
 			        pClient->address, PROTO_TIMEOUT_MS);
 			closeClient(pClient);
@@ -371,9 +377,14 @@ static void dropSilentClients(void)
 	}
 }
 
+// Says BYE to every active node first, so the nodes know the master is
+// shutting down instead of waiting for a timeout
 static void closeAllClients(void)
 {
 	for (int i = 0; i < MAX_CLIENTS; i++) {
+		if (clients[i].state == CLIENT_ACTIVE) {
+			sendBye(&clients[i], PROTO_BYE_SHUTDOWN);
+		}
 		if (clients[i].state != CLIENT_FREE) {
 			closeClient(&clients[i]);
 		}
@@ -397,6 +408,14 @@ static bool sendHelloAck(Client_t *pClient, uint8_t status)
 	struct proto_hello_ack ack = {.status = status, .heartbeat_ms = PROTO_HEARTBEAT_MS};
 	size_t payloadLen = proto_pack_hello_ack(message + PROTO_HEADER_LEN, &ack);
 	return sendMessage(pClient, message, PROTO_MSG_HELLO_ACK, payloadLen); //returns false if the send failed, which will cause the connection to close
+}
+
+static bool sendBye(Client_t *pClient, uint8_t reason)
+{
+	uint8_t message[PROTO_HEADER_LEN + PROTO_BYE_LEN];
+	struct proto_bye bye = {.reason = reason};
+	size_t payloadLen = proto_pack_bye(message + PROTO_HEADER_LEN, &bye);
+	return sendMessage(pClient, message, PROTO_MSG_BYE, payloadLen);
 }
 
 // Send a message whose payload is already packed at pMessage + PROTO_HEADER_LEN
