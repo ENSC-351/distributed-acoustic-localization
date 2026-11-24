@@ -9,7 +9,8 @@ Several BeagleY-AI "nodes" each estimate the direction of a sound and report it 
 - `master/`: the executable that runs on the master board
 - `common/`: library shared by the node and master (protocol)
 - `hal/`: hardware abstraction library (MCP3208 ADC over SPI)
-- `audio/`: samples the two microphones (ADC channels 0 and 1) as fast as the ADC allows, into timestamped blocks for signal analysis (see `audio/README.md`)
+- `audio/`: samples the two microphones (ADC channels 0 and 1) into timestamped blocks for signal analysis. Currently the **Linux reserved-core version** (see `audio/CONTEXT.md`)
+- `overlays/`: board setup that `audio/` needs: hardware SPI and a reserved CPU core
 - `audio_meter/`: microphone test: live loudness bars for both mics, and a benchmark of sample rate against SPI clock (see `audio_meter/README.md`)
 
 ## Building

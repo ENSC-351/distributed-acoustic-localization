@@ -5,7 +5,7 @@
 //   ./audio_meter <spi_hz>       meter at another SPI clock (sets the sample rate)
 //   ./audio_meter --bench        compare sample rate and reading quality at several SPI clocks
 //   ./audio_meter --spi-diag     measure where the time goes in each SPI conversion
-// Ctrl+C to quit. Run as root for real-time priority (smaller gaps between blocks).
+// Ctrl+C to quit. Run as root for access to SPI. Needs a reserved CPU core.
 
 #include "audio/audio_capture.h"
 #include "audio/audio_level.h"
@@ -85,6 +85,7 @@ static int runMeter(uint32_t spiSpeedHz)
     }
 
     int numMics = AudioLevel_getNumMics();
+    printf("Linux reserved-core sampler (CPU %d)\n", AudioCapture_getReservedCpu());
     printf("Microphone amplitude meter on ADC channels");
     for (int mic = 0; mic < numMics; mic++) {
         printf(" %u", captureConfig.channels[mic]);
@@ -156,8 +157,8 @@ static void collectSamples(SampleStats *s, int64_t *elapsedNs)
     AudioCapture_closeReader(reader);
 }
 
-// A bit-banged SPI bus runs at the speed of the CPU, so a CPU frequency
-// governor that changes the clock also changes the sample rate
+// The SPI driver's overhead runs at CPU speed, so a governor that changes the
+// clock can change the sample rate
 static void printGovernor(void)
 {
     FILE *file = fopen(CPU_GOVERNOR_PATH, "r");
@@ -216,6 +217,7 @@ static int runBenchmark(void)
         collectSamples(&samples, &elapsedNs);
         AudioCapture_Stats stats;
         AudioCapture_getStats(&stats);
+        int reservedCpu = AudioCapture_getReservedCpu();
         double rate = AudioCapture_getSampleRateHz();
         double periodNs = AudioCapture_getFramePeriodNs();
         double lagNs = AudioCapture_getChannelOffsetNs(1);
@@ -235,6 +237,7 @@ static int runBenchmark(void)
         if (stats.adcErrors > 0 || samples.blocksSkipped > 0) {
             printf("  (%" PRIu64 " ADC errors, %" PRIu64 " blocks skipped)", stats.adcErrors, samples.blocksSkipped);
         }
+        printf("  reserved CPU %d", reservedCpu);
         printf("\n");
     }
 

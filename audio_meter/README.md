@@ -11,7 +11,7 @@ Microphone amplitude meter on ADC channels 0 1. Press Ctrl+C to stop.
 
 mic 0 (ch 0) [################                        ]  40%  amp:  812  raw: 2860
 mic 1 (ch 1) [######                                  ]  15%  amp:  301  raw: 2349
-9931 Hz per mic | mic 1 lags 50.3 us | blocks 2480 | disturbed 3 | max gap 203 us | ADC errors 0
+12765 Hz per mic | mic 1 lags 39.2 us | blocks 11889 | disturbed 6 | max gap 154 us | ADC errors 0
 ```
 
 The sampling code is in the shared `audio` library (see `audio/README.md`);
@@ -26,7 +26,7 @@ cmake -S . -B build -DCMAKE_TOOLCHAIN_FILE=aarch64-toolchain.cmake
 cmake --build build --target audio_meter   # also copies to ~/ensc351/public/myApps/audio_meter
 ```
 
-On the BeagleY-AI (as root, for real-time sampling priority):
+On the BeagleY-AI (as root, for SPI access; needs the setup in `overlays/README.md`):
 
 ```shell
 sudo ./audio_meter            # meter at the default 1 MHz SPI clock
@@ -35,8 +35,7 @@ sudo ./audio_meter --bench    # compare rate and reading quality at 1, 1.25, 1.5
 sudo ./audio_meter --spi-diag # measure the real SPI clock and where each conversion's time goes
 ```
 
-With the current `spi-gpio` overlay the SPI clock argument has no effect (the
-bus runs at about 0.7 MHz regardless); see `audio/README.md`.
+At 3.3 V stay at or below 1.25 MHz; see `audio/README.md`.
 
 ## Level bar
 
@@ -59,6 +58,5 @@ bus runs at about 0.7 MHz regardless); see `audio/README.md`.
 
 - **`raw` stays near 0 or 4095**: wrong channel or mic not powered.
 - **`raw` hovers around 2048 but the bar never moves**: mic signal is small; lower `fullScaleCounts`.
-- **`max gap` is in the milliseconds**: not running as root, so the sampling
-  thread has normal priority and gets interrupted.
+- **`no reserved CPU core`**: boot with `isolcpus=3`; see `overlays/README.md`.
 - **`unable to open /dev/spidev0.0`**: SPI overlay not enabled, or no permission to access SPI.

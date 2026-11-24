@@ -1,4 +1,5 @@
 #include "spi_diag.h"
+#include <errno.h>
 #include <fcntl.h>
 #include <linux/spi/spidev.h>
 #include <stdbool.h>
@@ -10,8 +11,10 @@
 #include <time.h>
 #include <unistd.h>
 
-#define SPI_DEVICE "/dev/spidev0.0"
-#define DT_MAX_FREQUENCY "/sys/bus/spi/devices/spi0.0/of_node/spi-max-frequency"
+#define DEFAULT_SPI_DEVICE "/dev/spidev0.0"
+#define SPI_DEVICE_ENV "ADC_SPI_DEVICE"
+#define SPI_DEVICE_PREFIX "/dev/spidev"
+#define DT_MAX_FREQUENCY_FORMAT "/sys/bus/spi/devices/spi%s/of_node/spi-max-frequency"
 #define SPIDEV_BUFSIZ "/sys/module/spidev/parameters/bufsiz"
 
 // 32 transfers of up to 4 bytes fit in spidev's default 4096-byte buffer
@@ -110,9 +113,13 @@ int SpiDiag_run(void)
     static const uint32_t speedsHz[] = { 250000, 500000, 1000000, 2000000 };
     const int numSpeeds = (int)(sizeof(speedsHz) / sizeof(speedsHz[0]));
 
-    int fd = open(SPI_DEVICE, O_RDWR);
+    const char *device = getenv(SPI_DEVICE_ENV);
+    if (device == NULL || device[0] == '\0') {
+        device = DEFAULT_SPI_DEVICE;
+    }
+    int fd = open(device, O_RDWR);
     if (fd < 0) {
-        perror("SPI diag: unable to open " SPI_DEVICE);
+        fprintf(stderr, "SPI diag: unable to open %s: %s\n", device, strerror(errno));
         return EXIT_FAILURE;
     }
     uint8_t mode = SPI_MODE_0;
@@ -126,8 +133,12 @@ int SpiDiag_run(void)
         return EXIT_FAILURE;
     }
 
-    printf("SPI settings:\n");
-    printFileValue("device tree max frequency:", DT_MAX_FREQUENCY, true);
+    printf("SPI settings (%s):\n", device);
+    if (strncmp(device, SPI_DEVICE_PREFIX, strlen(SPI_DEVICE_PREFIX)) == 0) {
+        char path[256];
+        snprintf(path, sizeof(path), DT_MAX_FREQUENCY_FORMAT, device + strlen(SPI_DEVICE_PREFIX));
+        printFileValue("device tree max frequency:", path, true);
+    }
     printFileValue("spidev buffer size:", SPIDEV_BUFSIZ, false);
     uint32_t readBack = 0;
     if (ioctl(fd, SPI_IOC_RD_MAX_SPEED_HZ, &readBack) != -1) {
