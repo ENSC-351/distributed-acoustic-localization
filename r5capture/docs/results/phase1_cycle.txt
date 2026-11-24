@@ -1,0 +1,15 @@
+start state=offline firmware=j722s-mcu-r5f0_0-fw
+cycle 1: start=ok -> running, R5 uptime=4344ms (fresh=yes) | stop=FAILED(Device or resource busy) -> running
+    dmesg: [   56.031823] remoteproc remoteproc2: powering up 79000000.r5f
+    dmesg: [   56.050049] remoteproc remoteproc2: Booting fw image r5test-openamp.elf, size 1392080
+    dmesg: [   56.051343] rproc-virtio rproc-virtio.8.auto: assigned reserved memory node mcu-r5fss-dma-memory-region@a1000000
+    dmesg: [   56.052316] virtio_rpmsg_bus virtio1: rpmsg host is online
+    dmesg: [   56.052371] rproc-virtio rproc-virtio.8.auto: registered virtio1 (type 7)
+    dmesg: [   56.052382] remoteproc remoteproc2: remote processor 79000000.r5f is now up
+    dmesg: [   56.060632] virtio_rpmsg_bus virtio1: creating channel rpmsg-tty addr 0x400
+    dmesg: [   56.062560] virtio_rpmsg_bus virtio1: creating channel rpmsg-client-sample addr 0x401
+    dmesg: [   65.760077] platform 79000000.r5f: k3_r5_rproc_stop: timeout waiting for rproc completion event
+    dmesg: [   65.768818] remoteproc remoteproc2: can't stop rproc: -16
+stop did not reach offline: ending the test so the next start can't stack on a running core
+T1.2: 0/10 cycles genuinely restarted and stopped
+final state=running
