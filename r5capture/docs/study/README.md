@@ -16,6 +16,7 @@ our BeagleY-AI unless marked *estimate*. Raw data: [`../results/`](../results).
 | 8 | [08-glossary-and-questions.md](08-glossary-and-questions.md) | Every term in one place, plus open questions to study |
 | 9 | [09-r5-sampler.md](09-r5-sampler.md) | How the R5 samples the ADC: McSPI, frame timing, control through shared memory, results, the ADC's limits |
 | 10 | [10-memory-and-optimization.md](10-memory-and-optimization.md) | Memories and caches on the R5, the MPU, TCM, and each optimization step from ~4k to 24k samples/s |
+| 11 | [11-testing-and-debugging-journey.md](11-testing-and-debugging-journey.md) | Every problem we hit, in order: symptom, suspicion, test, finding, fix, lesson, including the wrong turns |
 
 Quick-reference numbers:
 

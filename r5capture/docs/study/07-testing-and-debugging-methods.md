@@ -1,6 +1,7 @@
 # 7. Testing and debugging methods that worked
 
 General techniques from this project, each with the example where it paid off.
+The full chronological story is in [11-testing-and-debugging-journey.md](11-testing-and-debugging-journey.md).
 
 ## Design for testability: a hardware boundary
 
