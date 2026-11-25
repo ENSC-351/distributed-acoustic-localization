@@ -15,9 +15,12 @@
 //
 // Frame timing: a busy-wait on the 25 MHz system timer (simplest first version;
 // a hardware timer interrupt can replace it later without touching capture.c).
-// The thread runs at the lowest preemptible priority and yields once per block,
-// so RPMsg, the shell and the heartbeat still run; when they delay a frame by
-// more than half a period, capture.c counts it as a late tick and flags the block.
+// The thread runs at the lowest preemptible priority and never yields: the shell
+// (priority 13) and RPMsg (cooperative) preempt it only when Linux sends something,
+// and the heartbeat is paused while capturing. Anything that delays a frame by more
+// than half a period is counted by capture.c as a late tick and flags the block.
+// (A k_yield() per block cost a context switch each time: ~1 late frame per 3 blocks
+// above 14,000 frames/s on the board.)
 #include "capture.h"
 #include "hal_r5_spi.h"
 #include "mcp3208.h"
@@ -37,7 +40,8 @@
 #define BLOCK_FRAMES 128
 #define RING_BLOCKS 256
 #define CAPTURE_STACK_SIZE 2048
-#define CAPTURE_PRIORITY 14          // lowest preemptible (same as the shell; we yield per block)
+#define CAPTURE_PRIORITY 14          // lowest preemptible; the shell runs at 13 (prj.conf), so it
+                                     // preempts capture only when a command arrives
 #define IDLE_POLL_MS 10
 #define INIT_RETRY_MS 1000
 #define SPITEST_CONVERSIONS 200
@@ -97,7 +101,6 @@ static void captureThread(void *unused1, void *unused2, void *unused3)
         pauseBackgroundWork(true);
 
         uint64_t next = R5HAL_nowTicks();
-        uint32_t frames = 0;
         while (atomic_get(&requestedRate) == rate) {
             next += period;
             uint64_t now = R5HAL_nowTicks();
@@ -108,9 +111,6 @@ static void captureThread(void *unused1, void *unused2, void *unused3)
                 now = R5HAL_nowTicks();
             }
             CAPTURE_tick();
-            if (++frames % BLOCK_FRAMES == 0) {
-                k_yield();   // let the equal-priority shell run between blocks
-            }
         }
         CAPTURE_stop();
         pauseBackgroundWork(false);
