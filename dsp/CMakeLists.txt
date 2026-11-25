@@ -14,3 +14,7 @@ target_link_libraries(dsp PUBLIC m)
 # Command-line tool: run the estimator on a window exported to a file
 add_executable(tdoa_cli tools/tdoa_cli.c)
 target_link_libraries(tdoa_cli PRIVATE dsp)
+
+# Command-line tool: run the streaming detector over a recording (text file)
+add_executable(detector_cli tools/detector_cli.c)
+target_link_libraries(detector_cli PRIVATE dsp)
