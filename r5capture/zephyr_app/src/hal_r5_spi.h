@@ -18,4 +18,10 @@ uint32_t R5SPI_setClockHz(uint32_t hz);
 // TX write to the RX word being ready) and the whole transfer, in timer ticks.
 bool R5SPI_measure(uint8_t channel, uint16_t *value, uint32_t *shiftTicks, uint32_t *totalTicks);
 
+// Profiling (capture_main.c): while r5spiProfileOn, R5HAL_spiTransfer() adds the
+// time it takes, and the bit-shifting part of it, to these sums (timer ticks).
+extern volatile bool r5spiProfileOn;
+extern uint32_t r5spiProfileTicks;
+extern uint32_t r5spiProfileShiftTicks;
+
 #endif

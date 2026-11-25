@@ -3,8 +3,9 @@
 // (r5cap_control.h): no R5 shell or RPMsg involved, so it works while sampling.
 //
 // Usage on the BeagleY-AI (root, for /dev/mem):
-//   sudo ./r5cap_ctl start <frames_per_s> [spi_hz] [irqoff]   (re)start sampling;
+//   sudo ./r5cap_ctl start <frames_per_s> [spi_hz] [irqoff] [profile]   (re)start sampling;
 //                     irqoff = interrupts off on the R5 while sampling
+//                     profile = time each part of the first 8192 frames (see diag)
 //   sudo ./r5cap_ctl stop
 //   sudo ./r5cap_ctl status
 //   sudo ./r5cap_ctl diag      late frames: count, worst, and when (time between them)
@@ -24,7 +25,7 @@
 
 static void usage(const char *program)
 {
-    fprintf(stderr, "usage: sudo %s start <frames_per_s> [spi_hz] [irqoff] | stop | status | diag\n",
+    fprintf(stderr, "usage: sudo %s start <frames_per_s> [spi_hz] [irqoff] [profile] | stop | status | diag\n",
             program);
 }
 
@@ -76,6 +77,25 @@ int main(int argc, char *argv[])
         printf("lateEvents=%u maxOvershootUs=%.1f irqoff=%s\n", (unsigned)diag->lateEvents,
                diag->maxOvershootTicks * usPerTick,
                (control->ackFlags & R5CAP_CTL_IRQ_LOCK) ? "yes" : "no");
+        uint32_t pf = diag->profFrames;
+        if (pf > 1) {
+            double frame = diag->profFrameTicks * usPerTick / (pf - 1);
+            double tick = diag->profTickTicks * usPerTick / pf;
+            double spi = diag->profSpiTicks * usPerTick / pf;
+            double shift = diag->profShiftTicks * usPerTick / pf;
+            uint32_t be = diag->profBlockEnds;
+            double blockEnd = be ? diag->profBlockEndTicks * usPerTick / be : 0.0;
+            double normalTick = (pf > be) ? (diag->profTickTicks - diag->profBlockEndTicks) * usPerTick / (pf - be) : 0.0;
+            printf("profile over %u frames (us per frame; probes add a few timer reads):\n", (unsigned)pf);
+            printf("  frame start to next start  %7.2f   (= %.0f frames/s if back to back)\n", frame, 1e6 / frame);
+            printf("    in CAPTURE_tick          %7.2f   (normal frames %.2f, block-end frames %.2f, worst %.2f)\n",
+                   tick, normalTick, blockEnd, diag->profMaxTickTicks * usPerTick);
+            printf("      SPI transfers (x2)     %7.2f\n", spi);
+            printf("        bit shifting         %7.2f\n", shift);
+            printf("        SPI register/CS work %7.2f\n", spi - shift);
+            printf("      capture bookkeeping    %7.2f\n", tick - spi);
+            printf("    loop (wait, schedule, diag) %4.2f\n", frame - tick);
+        }
         uint32_t n = count < R5CAP_DIAG_EVENTS ? count : R5CAP_DIAG_EVENTS;
         if (n > 0) {
             printf("last %u late frames (time since previous one, how late):\n", (unsigned)n);
@@ -109,8 +129,12 @@ int main(int argc, char *argv[])
     if (strcmp(argv[1], "start") == 0 && argc >= 3) {
         rate = (uint32_t)strtoul(argv[2], NULL, 10);
         spi = (argc >= 4) ? (uint32_t)strtoul(argv[3], NULL, 10) : 0;
-        if (argc >= 5 && strcmp(argv[4], "irqoff") == 0) {
-            flags |= R5CAP_CTL_IRQ_LOCK;
+        for (int a = 4; a < argc; a++) {
+            if (strcmp(argv[a], "irqoff") == 0) {
+                flags |= R5CAP_CTL_IRQ_LOCK;
+            } else if (strcmp(argv[a], "profile") == 0) {
+                flags |= R5CAP_CTL_PROFILE;
+            }
         }
         if (rate == 0) {
             usage(argv[0]);

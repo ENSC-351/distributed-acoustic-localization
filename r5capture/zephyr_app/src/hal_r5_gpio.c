@@ -89,6 +89,10 @@ bool R5HAL_spiTransfer(const uint8_t *tx, uint8_t *rx, uint32_t len)
 #include "hal_r5_spi.h"
 #include "mcp3208.h"
 
+volatile bool r5spiProfileOn = false;   // not implemented for the bit-banged SPI
+uint32_t r5spiProfileTicks = 0;
+uint32_t r5spiProfileShiftTicks = 0;
+
 const char *R5SPI_name(void)
 {
     return "gpio";

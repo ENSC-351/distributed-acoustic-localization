@@ -170,6 +170,17 @@ static void captureThread(void *unused1, void *unused2, void *unused3)
         // Optional: no interrupts while sampling. Control is polled from shared
         // memory, so nothing here needs one; RPMsg etc. wait until capture stops.
         const bool lockIrqs = (captureFlags & R5CAP_CTL_IRQ_LOCK) != 0;
+
+        // Optional profile of the first R5CAP_PROFILE_FRAMES frames (sums kept in
+        // locals, published at block ends; the probes add a few timer reads per frame)
+        bool profiling = (captureFlags & R5CAP_CTL_PROFILE) != 0;
+        uint32_t profFrames = 0, profFrameTicks = 0, profTickTicks = 0;
+        uint32_t profBlockEnds = 0, profBlockEndTicks = 0, profMaxTick = 0;
+        uint64_t profPrevStart = 0;
+        diag->profFrames = 0;
+        r5spiProfileTicks = 0;
+        r5spiProfileShiftTicks = 0;
+        r5spiProfileOn = profiling;
         unsigned int irqKey = lockIrqs ? irq_lock() : 0;
 
         // Hot loop: nothing but waiting for the next frame and sampling it.
@@ -201,14 +212,42 @@ static void captureThread(void *unused1, void *unused2, void *unused3)
                 maxOvershoot = overshoot;
             }
             CAPTURE_tick();
+            if (profiling) {
+                uint32_t tick = (uint32_t)(R5HAL_nowTicks() - now);
+                if (profPrevStart != 0) {
+                    profFrameTicks += (uint32_t)(now - profPrevStart);
+                }
+                profPrevStart = now;
+                profTickTicks += tick;
+                profMaxTick = MAX(profMaxTick, tick);
+                if (framesInBlock + 1 == BLOCK_FRAMES) {
+                    profBlockEnds++;
+                    profBlockEndTicks += tick;
+                }
+                if (++profFrames >= R5CAP_PROFILE_FRAMES) {
+                    profiling = false;
+                    r5spiProfileOn = false;
+                }
+            }
             if (++framesInBlock == BLOCK_FRAMES) {
                 framesInBlock = 0;
                 diag->maxOvershootTicks = maxOvershoot;
+                if (profFrames > 0) {
+                    diag->profFrameTicks = profFrameTicks;
+                    diag->profTickTicks = profTickTicks;
+                    diag->profSpiTicks = r5spiProfileTicks;
+                    diag->profShiftTicks = r5spiProfileShiftTicks;
+                    diag->profBlockEnds = profBlockEnds;
+                    diag->profBlockEndTicks = profBlockEndTicks;
+                    diag->profMaxTickTicks = profMaxTick;
+                    diag->profFrames = profFrames;
+                }
                 if (controlPending() || atomic_get(&requestedRate) != rate) {
                     break;
                 }
             }
         }
+        r5spiProfileOn = false;
         if (lockIrqs) {
             irq_unlock(irqKey);
         }

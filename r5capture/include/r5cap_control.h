@@ -33,6 +33,8 @@ struct r5cap_control {
 };
 
 #define R5CAP_CTL_IRQ_LOCK (1u << 0)   // interrupts off on the R5 while sampling
+#define R5CAP_CTL_PROFILE (1u << 1)    // time each part of a frame (first R5CAP_PROFILE_FRAMES frames)
+#define R5CAP_PROFILE_FRAMES 8192
 
 // Diagnostics written by the R5 while sampling (reset at each start): how late the
 // frame loop gets, and when, to find what delays it.
@@ -45,6 +47,15 @@ struct r5cap_diag {
     volatile uint32_t eventCount;          // events recorded so far (ring index = count % EVENTS)
     volatile uint32_t eventTick[R5CAP_DIAG_EVENTS];      // low 32 bits of the timer at the event
     volatile uint32_t eventOvershoot[R5CAP_DIAG_EVENTS]; // how late, in ticks
+    // Profile (R5CAP_CTL_PROFILE), sums in timer ticks over profFrames frames
+    volatile uint32_t profFrames;         // frames profiled
+    volatile uint32_t profFrameTicks;     // frame start to next frame start
+    volatile uint32_t profTickTicks;      // inside CAPTURE_tick() (conversions + bookkeeping)
+    volatile uint32_t profSpiTicks;       // inside R5HAL_spiTransfer() (both conversions)
+    volatile uint32_t profShiftTicks;     // from TX write to RX word ready (bit shifting)
+    volatile uint32_t profBlockEnds;      // frames that ended a block (publish + control check)
+    volatile uint32_t profBlockEndTicks;  // CAPTURE_tick() time of those frames
+    volatile uint32_t profMaxTickTicks;   // longest CAPTURE_tick()
 };
 
 #endif

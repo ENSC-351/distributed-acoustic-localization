@@ -68,6 +68,10 @@
 #define MAX_RATIO 4096u
 #define RESET_WAIT_LOOPS 100000
 
+volatile bool r5spiProfileOn = false;
+uint32_t r5spiProfileTicks = 0;
+uint32_t r5spiProfileShiftTicks = 0;
+
 static bool isReady = false;
 static uint32_t chconf = 0;   // CH0CONF without FORCE (kept here to avoid read-modify-write)
 static uint32_t clockHz = 0;
@@ -142,7 +146,17 @@ bool R5HAL_spiTransfer(const uint8_t *tx, uint8_t *rx, uint32_t len)
     if ((command & LEADING_ZERO_MASK) != 0) {
         return false;   // only MCP3208-style commands (5 leading zeros) can be shortened
     }
-    uint32_t reply = transferWord(command & WORD_MASK, NULL, NULL);
+    uint32_t reply;
+    if (r5spiProfileOn) {
+        uint64_t begin = R5HAL_nowTicks();
+        uint64_t shiftStart = 0;
+        uint32_t shift = 0;
+        reply = transferWord(command & WORD_MASK, &shift, &shiftStart);
+        r5spiProfileTicks += (uint32_t)(R5HAL_nowTicks() - begin);
+        r5spiProfileShiftTicks += shift;
+    } else {
+        reply = transferWord(command & WORD_MASK, NULL, NULL);
+    }
     rx[0] = 0;
     rx[1] = (uint8_t)(reply >> 8);
     rx[2] = (uint8_t)reply;
