@@ -53,6 +53,21 @@ static uint32_t spiClockHz = 0;   // last clock set with "r5cap spiclk" (0 = HAL
 static atomic_t capturing = ATOMIC_INIT(0);
 
 uint32_t R5_icacheStatus(void);   // icache.c
+extern const k_tid_t heartbeat_tid;   // heartbeat.c
+
+// Anything else that wakes up on the R5 while sampling (here: the heartbeat,
+// 10 times a second, plus the timer interrupt for its sleep) delays frames.
+// Measured: ~11 late frames/s at every rate. So pause it while capturing; the
+// ring's writeSeq shows the R5 is alive. With nothing scheduled, the tickless
+// kernel has no timer interrupts at all.
+static void pauseBackgroundWork(bool pause)
+{
+    if (pause) {
+        k_thread_suspend(heartbeat_tid);
+    } else {
+        k_thread_resume(heartbeat_tid);
+    }
+}
 
 static void captureThread(void *unused1, void *unused2, void *unused3)
 {
@@ -79,6 +94,7 @@ static void captureThread(void *unused1, void *unused2, void *unused3)
             continue;
         }
         atomic_set(&capturing, 1);
+        pauseBackgroundWork(true);
 
         uint64_t next = R5HAL_nowTicks();
         uint32_t frames = 0;
@@ -97,6 +113,7 @@ static void captureThread(void *unused1, void *unused2, void *unused3)
             }
         }
         CAPTURE_stop();
+        pauseBackgroundWork(false);
         atomic_set(&capturing, 0);
     }
 }

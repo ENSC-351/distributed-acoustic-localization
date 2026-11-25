@@ -20,6 +20,8 @@ static uint32_t blockNumber = 0;     // block being filled
 static uint32_t frameInBlock = 0;    // next frame to fill in that block
 static uint64_t blockFirstTick = 0;  // when that block's frame 0 started
 static uint32_t blockFlags = 0;      // R5CAP_BLOCK_* for that block
+static uint16_t *blockSamples = NULL;  // samples of that block's slot (found once per block,
+                                       // not per frame: the header is in uncached shared memory)
 static bool hasPreviousTick = false;
 static uint64_t previousTickStart = 0;
 
@@ -129,6 +131,7 @@ static void startBlock(uint32_t slot, uint64_t now)
 {
     blockFirstTick = now;
     blockFlags = 0;
+    blockSamples = r5cap_slotSamples(region, slot);
     // Readers must stop trusting the old block in this slot before we overwrite it
     r5cap_meta(region, slot)->seq = R5CAP_SEQ_WRITING;
     R5CAP_BARRIER();
@@ -177,7 +180,7 @@ void CAPTURE_tick(void)
     }
     checkTickTiming(now);
 
-    uint16_t *frame = r5cap_slotSamples(region, slot) + (size_t)frameInBlock * config.numChannels;
+    uint16_t *frame = blockSamples + (size_t)frameInBlock * config.numChannels;
     for (uint32_t i = 0; i < config.numChannels; i++) {
         if (!convertChannel(config.channels[i], &frame[i])) {
             frame[i] = 0;
