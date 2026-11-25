@@ -6,17 +6,20 @@ Branch `madden/r5-capture`. Everything you need to run is prebuilt in
 ## Where it stands (2026-11-25, Madden's board, TI kernel 6.1)
 
 - **The R5 reads the MCP3208 through MCU_SPI0** (your overlay), one 19-bit word per
-  conversion, frames paced by the R5's 25 MHz timer, samples into the shared ring,
-  read by Linux. 0 ADC errors, 0 ring errors.
-- **Measured on the R5:** reference clock 48 MHz; at 1.2 MHz SPI a conversion takes
-  ~23.5 µs, a 2-mic frame ~47 µs. The loop sustained up to ~19,000 frames/s.
-- **Clean (zero late frames):** 12,000 frames/s so far. Late frames above that came
-  from a per-block context switch (now removed) and the heartbeat (now paused while
-  sampling). **This build adds Linux control through shared memory (`r5cap_ctl`) and
-  hasn't run on a board yet**; you may be first.
-- What made it fast enough: hardware SPI (bit-banging from the R5 was ~100 µs per
-  conversion, each register access ~0.7 µs), and turning on the R5's instruction cache
-  (code runs from DRAM; data cache stays off).
+  conversion, frames paced by the R5's 25 MHz timer, samples into the shared ring, read
+  by Linux. 0 ADC errors, 0 ring errors. Controlled from Linux through shared memory
+  (`r5cap_ctl`), so the R5's shell isn't needed while sampling.
+- **Best clean setting: 16,000 frames/s per mic, SPI ~1.23 MHz, interrupts off**
+  (`sudo ./r5cap_ctl start 16000 1250000 irqoff`): 0 late frames, worst frame start
+  3.2 µs off schedule. 18,000 also passes with less slack.
+- **Use `irqoff`.** With interrupts on, a 50 Hz interrupt on the R5 makes a frame late
+  every 20.0 ms (~32-42 µs). Measured with `r5cap_ctl diag`.
+- **Ceiling ~18,900 frames/s**, set by the R5's own code speed (frame ~53 µs, of which
+  SPI shifting ~31 µs). Asking for more doesn't go faster. Older builds reported 0 late
+  frames there anyway; the current build counts slips against the schedule, and the
+  sweep checks delivered blocks/s, so it won't happen again.
+- Reference clock is 48 MHz; the R5's instruction cache is on (data cache off).
+- Not yet done: the analysis of a real tap recording through the R5 (that's Test B).
 
 ## Before you start
 
@@ -47,9 +50,10 @@ with zero late frames. Send back `mcspi.txt`.
 
 ## Test B: the same taps through the R5 and through Linux
 
-With the R5 sampling (after Test A), tap the table ~20 cm from the mic about once a
-second (or drop a marble a few times) during each recording:
+Set the R5 to the best clean setting, then tap the table ~20 cm from the mic about once
+a second (or drop a marble a few times) during each recording:
 ```
+sudo ./r5cap_ctl start 16000 1250000 irqoff               # don't trust a rate above ~18,000
 sudo ./r5cap_ring_read 10 > r5taps.wav 2> r5taps.txt      # through the R5
 sudo ./r5cap_ctl stop                                       # free MCU_SPI0 for Linux
 sudo ADC_SPI_DEVICE=/dev/spidevX.0 ./adc_record 10 > linuxtaps.wav 2> linuxtaps.txt
@@ -66,7 +70,8 @@ mic spacing it allows, c/(2f)) and the CH0/CH1 delay, which must equal the measu
 
 ```
 sudo ./r5cap_ctl status                  # what's running + ring counters
-sudo ./r5cap_ctl start 16000 1200000     # rate (frames/s per mic), SPI clock (Hz)
+sudo ./r5cap_ctl start 16000 1250000 irqoff   # rate (frames/s per mic), SPI clock (Hz), interrupts off
+sudo ./r5cap_ctl diag                    # late frames while sampling: count, worst, time between
 sudo ./r5cap_ctl stop
 sudo ./r5shell.sh "r5cap stats" "r5cap spitest"   # R5 shell: only while sampling is stopped
 ```
@@ -84,3 +89,11 @@ aarch64-linux-gnu-gcc $F -Ir5capture/include -Ir5capture/linux r5capture/linux/r
 aarch64-linux-gnu-gcc $F -Ir5capture/include r5capture/linux/r5cap_ctl.c -o r5cap_ctl
 aarch64-linux-gnu-gcc $F -pthread -Ihal/include r5capture/linux/adc_record.c hal/src/adc.c -o adc_record
 ```
+
+## Known issues on Madden's board
+
+- Once, the whole board froze (no ping) while loading R5 firmware; the next load of the same
+  build worked. Not reproduced; cause unknown. A second, earlier "hang" was a script waiting
+  on a blocked RPMsg tty write (fixed). Keep `ping` running when testing.
+- `dmesg` showed 4 `Deferred event dump:` lines ~1 s after an R5 start; source not identified
+  yet (possibly the CC33xx Wi-Fi driver).

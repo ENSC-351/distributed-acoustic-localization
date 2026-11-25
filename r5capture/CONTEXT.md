@@ -104,3 +104,21 @@ unpacked in its `gnu/` folder), install `cmake` and `device-tree-compiler`, and 
   (16-frame blocks, `linux/sampler_stats.c`, results in `docs/results/stats_*.txt`),
   vs 9,827 on Joey's 7.2.8 board. Kernel versions clearly differ a lot here.
 - Theory and all findings so far, as a study guide: `docs/study/`.
+
+## R5 sampling the ADC (Madden's board, 2026-11-25, later)
+
+Start with `docs/test-r5-adc-joey.md` (test steps) and `docs/study/` (background).
+- **Working:** `zephyr_app` (Zephyr 4.5.0) samples the MCP3208 through MCU_SPI0 (Joey's overlay;
+  Linux keeps it powered with `board/mcspi_power_on.sh`), one 19-bit word per conversion, timer-paced
+  frames, ring at 0xA1F00000, control through shared memory (`include/r5cap_control.h`, `linux/r5cap_ctl`).
+- **Best clean: 16,000 frames/s per mic at ~1.23 MHz with interrupts off** (`r5cap_ctl start 16000 1250000 irqoff`).
+  A 50 Hz interrupt (likely the Zephyr kernel timer) makes frames late when interrupts are on.
+- **Ceiling ~18,900 frames/s** (R5 code speed; DRAM data is uncached). Next optimisations: two
+  conversions per McSPI FIFO burst, and capture data in BTCM. SPI alone allows ~21,800.
+- **Measured on the R5:** McSPI reference clock 48 MHz; bit-banging from the R5 is ~100 us per
+  conversion (each register access ~0.7 us), so `R5CAP_SPI=gpio` is only a fallback.
+- **I-cache on, D-cache off** (`zephyr_app/src/icache.c`): enabling the D-cache stalls the firmware.
+- Prebuilt firmware + tools in `prebuilt/` (built from the commit that added them).
+- Open: tap recording through the R5 not analyzed yet; CH0 ~1,890 vs CH1 ~2,360 on Madden's
+  board with the same signal supposedly on both; the identity of the 50 Hz interrupt; the
+  `Deferred event dump` dmesg lines; one unexplained full-board freeze during an R5 load.
