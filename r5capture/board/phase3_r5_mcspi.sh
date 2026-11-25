@@ -5,6 +5,8 @@
 #   sudo ./phase3_r5_mcspi.sh | tee mcspi.txt
 # Leaves the R5 sampling at the best setting found (ready for r5cap_ring_read).
 cd "$(dirname "$0")"
+ELF=${ELF:-r5capture-mcspi.elf}           # firmware to test (e.g. ELF=r5capture-fast.elf)
+FWNAME=r5test-${ELF#r5capture-}
 [ "$(id -u)" = 0 ] || { echo "run with sudo"; exit 1; }
 CLOCKS=${CLOCKS:-"1250000"}
 RATES=${RATES:-"16000 18000 19000 20000 21000 22000 23000"}
@@ -15,13 +17,13 @@ MEASURE_S=3
 echo "##### 1. MCU_SPI0 powered and owned by the expected controller?"
 ./mcspi_power_on.sh || exit 1
 RP=/sys/class/remoteproc/remoteproc2
-if [ "$(cat $RP/state)" = running ] && [ "$(cat $RP/firmware)" = r5test-mcspi.elf ] && ./r5cap_ctl status > /dev/null 2>&1; then
-  echo "##### 2. r5capture-mcspi.elf is already running and answering r5cap_ctl: not reloading"
+if [ "$(cat $RP/state)" = running ] && [ "$(cat $RP/firmware)" = "$FWNAME" ] && ./r5cap_ctl status > /dev/null 2>&1; then
+  echo "##### 2. $ELF is already running and answering r5cap_ctl: not reloading"
   ./r5cap_ctl stop > /dev/null
 else
   [ "$(cat $RP/state)" = offline ] || { echo "R5 not offline: sudo reboot first"; exit 1; }
-  echo "##### 2. load r5capture-mcspi.elf (does not start sampling by itself)"
-  NO_STOP=1 SRC=$PWD/r5capture-mcspi.elf FW=r5test-mcspi.elf ./phase1_load_ti.sh 2>&1 | grep --line-buffered -E 'state=|is now up|Zephyr version|error|fail'
+  echo "##### 2. load $ELF (does not start sampling by itself)"
+  NO_STOP=1 SRC=$PWD/$ELF FW=$FWNAME ./phase1_load_ti.sh 2>&1 | grep --line-buffered -E 'state=|is now up|Zephyr version|error|fail'
   sleep 2
 fi
 
@@ -39,7 +41,7 @@ for clk in $CLOCKS; do
   for mode in $MODES; do
     flag=""; [ "$mode" = irqoff ] && flag=irqoff
     for rate in $RATES; do
-      ./r5cap_ctl start $rate $clk $flag > /dev/null || { echo "r5cap_ctl failed"; exit 1; }
+      ./r5cap_ctl start $rate $clk $flag > /dev/null || { echo "r5cap_ctl failed"; ./r5cap_ctl crash; exit 1; }
       sleep $SETTLE_S
       a=$(./r5cap_status); sleep $MEASURE_S; b=$(./r5cap_status)
       blocks=$(( $(get "$b" writeSeq) - $(get "$a" writeSeq) ))

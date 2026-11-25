@@ -21,11 +21,12 @@ target_sources(app PRIVATE src/main_remote.c src/heartbeat.c src/timer_fix.c
 target_include_directories(app PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../include ${CMAKE_CURRENT_SOURCE_DIR}/../fw)
 # The bit-banged build can start sampling on its own (no peripheral to power);
 # the McSPI build waits for "r5cap start" after the board script checks MCU_SPI0.
-# Hot variables in the BTCM (fw/r5cap_fastmem.h). Experimental: the first board
-# run hung (R5 stopped after starting OpenAMP), being diagnosed. Default off.
-option(R5CAP_BTCM "Put per-frame variables in the R5 BTCM" OFF)
-if(R5CAP_BTCM)
-  target_compile_definitions(app PRIVATE R5CAP_USE_BTCM=1)
+# Hot variables in fast internal memory (ATCM at 0x1000, fw/r5cap_fastmem.h).
+# Experimental until it passes on the board; default off.
+option(R5CAP_FASTMEM "Put per-frame variables in the R5 ATCM" OFF)
+if(R5CAP_FASTMEM)
+  target_compile_definitions(app PRIVATE R5CAP_USE_FASTMEM=1)
+  zephyr_linker_sources(SECTIONS r5fast.ld)
 endif()
 if(R5CAP_SPI STREQUAL "gpio")
   target_compile_definitions(app PRIVATE AUTOSTART_RATE_HZ=4000)
