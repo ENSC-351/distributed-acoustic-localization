@@ -9,6 +9,7 @@
 //   sudo ./r5cap_ctl stop
 //   sudo ./r5cap_ctl status
 //   sudo ./r5cap_ctl diag      late frames: count, worst, and when (time between them)
+//   sudo ./r5cap_ctl crash     why the R5 firmware crashed, if it did (works when it's dead)
 #include "r5cap_control.h"
 #include "r5cap_shared.h"
 #include <fcntl.h>
@@ -25,7 +26,7 @@
 
 static void usage(const char *program)
 {
-    fprintf(stderr, "usage: sudo %s start <frames_per_s> [spi_hz] [irqoff] [profile] | stop | status | diag\n",
+    fprintf(stderr, "usage: sudo %s start <frames_per_s> [spi_hz] [irqoff] [profile] | stop | status | diag | crash\n",
             program);
 }
 
@@ -64,9 +65,23 @@ int main(int argc, char *argv[])
     }
     volatile struct r5cap_control *control =
         (volatile struct r5cap_control *)((uint8_t *)page + (R5CAP_CONTROL_PHYS - R5CAP_HEARTBEAT_PHYS));
-    if (control->magic != R5CAP_CONTROL_MAGIC) {
+    if (control->magic != R5CAP_CONTROL_MAGIC && strcmp(argv[1], "crash") != 0) {
         fprintf(stderr, "no control block: is the R5 capture firmware (with r5cap_ctl support) running?\n");
         return 1;
+    }
+
+    if (strcmp(argv[1], "crash") == 0) {
+        volatile struct r5cap_crash *c =
+            (volatile struct r5cap_crash *)((uint8_t *)page + (R5CAP_CRASH_PHYS - R5CAP_HEARTBEAT_PHYS));
+        if (c->magic != R5CAP_CRASH_MAGIC) {
+            printf("no crash recorded since the R5 firmware booted\n");
+            return 0;
+        }
+        printf("R5 CRASHED: reason=%u pc=0x%08x lr=0x%08x r0=0x%08x xpsr=0x%08x\n", (unsigned)c->reason,
+               (unsigned)c->pc, (unsigned)c->lr, (unsigned)c->r0, (unsigned)c->xpsr);
+        printf("  data fault: DFSR=0x%08x DFAR=0x%08x   instruction fault: IFSR=0x%08x IFAR=0x%08x\n",
+               (unsigned)c->dfsr, (unsigned)c->dfar, (unsigned)c->ifsr, (unsigned)c->ifar);
+        return 0;
     }
 
     if (strcmp(argv[1], "diag") == 0) {

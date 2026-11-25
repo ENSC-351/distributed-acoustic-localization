@@ -58,4 +58,22 @@ struct r5cap_diag {
     volatile uint32_t profMaxTickTicks;   // longest CAPTURE_tick()
 };
 
+// Written by the R5's fatal-error handler (zephyr_app/src/fatal.c) when the firmware
+// crashes, so Linux can see why even though the R5 has stopped. Cleared at boot.
+#define R5CAP_CRASH_PHYS (R5CAP_HEARTBEAT_PHYS + 0x800u)
+#define R5CAP_CRASH_MAGIC 0x48535243u   // "CRSH"
+
+struct r5cap_crash {
+    volatile uint32_t magic;    // R5CAP_CRASH_MAGIC once a crash was recorded, 0 at boot
+    volatile uint32_t reason;   // Zephyr K_ERR_* reason
+    volatile uint32_t pc;       // where it happened (exception frame)
+    volatile uint32_t lr;
+    volatile uint32_t dfsr;     // data fault status / address (CP15)
+    volatile uint32_t dfar;
+    volatile uint32_t ifsr;     // instruction fault status / address (CP15)
+    volatile uint32_t ifar;
+    volatile uint32_t r0;
+    volatile uint32_t xpsr;
+};
+
 #endif
