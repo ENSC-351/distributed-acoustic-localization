@@ -2,14 +2,15 @@
 // Event buffer module: holds the EVENTs the network server receives until the
 // localizer uses them.
 //
-// PLACEHOLDER: netServer.c already calls EventBuffer_add(), but the real buffer
-// (and the localizer that reads it) hasn't been written yet. eventBuffer.c only
-// counts the events for now, so the master builds and runs.
+// The network server adds events from its thread, and the localizer takes
+// them from its own thread. If the buffer fills up, the oldest event is
+// thrown away, since a newer event is more useful for localization.
 
 #ifndef EVENT_BUFFER_H
 #define EVENT_BUFFER_H
 
 #include "common/protocol.h"
+#include <stdbool.h>
 #include <stdint.h>
 
 // One EVENT, plus what the master knows about where and when it came from
@@ -22,7 +23,18 @@ typedef struct {
 void EventBuffer_init(void);
 void EventBuffer_cleanup(void);
 
-// Copies pEntry into the buffer. Called from the network server thread.
+// Copies pEntry into the buffer, throwing away the oldest event if it's full.
+// Called from the network server thread.
 void EventBuffer_add(const EventBuffer_entry_t *pEntry);
+
+// Take the oldest event. Returns false right away if there are none.
+bool EventBuffer_take(EventBuffer_entry_t *pEntry);
+
+// Take the oldest event, waiting up to timeoutMs for one to arrive. Returns
+// false if none arrived in time.
+bool EventBuffer_waitAndTake(EventBuffer_entry_t *pEntry, long long timeoutMs);
+
+// Events thrown away because the buffer was full
+uint32_t EventBuffer_getDropCount(void);
 
 #endif
