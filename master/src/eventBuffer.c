@@ -1,4 +1,5 @@
 // eventBuffer.c
+<<<<<<< HEAD
 // Event buffer module: a fixed size ring of events, shared between the
 // network server thread and the localization thread. See
 // master/include/master/eventBuffer.h for what each function does.
@@ -54,10 +55,26 @@ void EventBuffer_init(void)
 	numEntries = 0;
 	dropCount = 0;
 	pthread_mutex_unlock(&lock);
+=======
+// PLACEHOLDER event buffer: counts the events it's given and drops them, until
+// the real buffer and localizer are written.
+
+#include "master/eventBuffer.h"
+#include <assert.h>
+#include <pthread.h>
+#include <stdio.h>
+
+static pthread_mutex_t lock = PTHREAD_MUTEX_INITIALIZER;
+static unsigned long long numEventsAdded = 0;
+
+void EventBuffer_init(void)
+{
+>>>>>>> 64db2232641ac1c5507ed20d46e9e54b68b298f1
 }
 
 void EventBuffer_cleanup(void)
 {
+<<<<<<< HEAD
 	// only call this once no thread can still be in EventBuffer_add() or
 	// waiting in EventBuffer_waitAndTake(): destroying a condition variable
 	// that a thread is waiting on is undefined behaviour
@@ -69,11 +86,18 @@ void EventBuffer_cleanup(void)
 	       (unsigned)numDropped, numLeft);
 	// lock was set up with PTHREAD_MUTEX_INITIALIZER, so it deosnt need to be destroyed.
 	pthread_cond_destroy(&notEmpty); //notEmpty was set up by pthread_cond_init(), so it needs to be destroyed
+=======
+	pthread_mutex_lock(&lock);
+	unsigned long long numEvents = numEventsAdded;
+	pthread_mutex_unlock(&lock);
+	printf("EventBuffer received %llu events.\n", numEvents);
+>>>>>>> 64db2232641ac1c5507ed20d46e9e54b68b298f1
 }
 
 void EventBuffer_add(const EventBuffer_entry_t *pEntry)
 {
 	assert(pEntry != NULL);
+<<<<<<< HEAD
 
 	pthread_mutex_lock(&lock);
 	if (numEntries == EVENT_BUFFER_CAPACITY) {
@@ -155,3 +179,11 @@ uint32_t EventBuffer_getDropCount(void)
 	pthread_mutex_unlock(&lock);
 	return numDropped;
 }
+=======
+	// Locked even though only the server thread adds for now, since the real
+	// buffer will be read by the localizer thread
+	pthread_mutex_lock(&lock);
+	numEventsAdded++;
+	pthread_mutex_unlock(&lock);
+}
+>>>>>>> 64db2232641ac1c5507ed20d46e9e54b68b298f1
