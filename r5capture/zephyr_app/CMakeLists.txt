@@ -15,7 +15,7 @@ target_include_directories(app PRIVATE ${LIBMETAL_INCLUDE_DIR} ${OPENAMP_INCLUDE
 # SPI to the MCP3208: "mcspi" (hardware MCU_SPI0, default) or "gpio" (bit-banged)
 set(R5CAP_SPI mcspi CACHE STRING "SPI implementation: mcspi or gpio")
 target_sources(app PRIVATE src/main_remote.c src/heartbeat.c src/timer_fix.c
-                           src/hal_r5_timer.c src/hal_r5_${R5CAP_SPI}.c src/capture_main.c
+                           src/hal_r5_timer.c src/hal_r5_${R5CAP_SPI}.c src/capture_main.c src/icache.c
                            ${CMAKE_CURRENT_SOURCE_DIR}/../fw/capture.c
                            ${CMAKE_CURRENT_SOURCE_DIR}/../fw/mcp3208.c)
 target_include_directories(app PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../include ${CMAKE_CURRENT_SOURCE_DIR}/../fw)

@@ -52,6 +52,8 @@ static atomic_t requestedRate = ATOMIC_INIT(AUTOSTART_RATE_HZ);   // 0 = stopped
 static uint32_t spiClockHz = 0;   // last clock set with "r5cap spiclk" (0 = HAL default)
 static atomic_t capturing = ATOMIC_INIT(0);
 
+uint32_t R5_icacheStatus(void);   // icache.c
+
 static void captureThread(void *unused1, void *unused2, void *unused3)
 {
     (void)unused1;
@@ -132,7 +134,9 @@ static int cmdStats(const struct shell *sh, size_t argc, char **argv)
     (void)argc;
     (void)argv;
     const struct r5cap_header *h = (const struct r5cap_header *)ring;
-    shell_print(sh, "spi=%s clock=%u Hz (0 = default)", R5SPI_name(), (unsigned int)spiClockHz);
+    uint32_t sctlr = R5_icacheStatus();
+    shell_print(sh, "spi=%s clock=%u Hz (0 = default)  I-cache=%s D-cache=%s", R5SPI_name(),
+                (unsigned int)spiClockHz, (sctlr & BIT(12)) ? "on" : "off", (sctlr & BIT(2)) ? "on" : "off");
     shell_print(sh, "ring @0x%08x state=%u writeSeq=%u lateTicks=%u adcErrors=%u",
                 (unsigned int)R5CAP_SHM_PHYS, (unsigned int)h->state, (unsigned int)h->writeSeq,
                 (unsigned int)h->lateTicks, (unsigned int)h->adcErrors);

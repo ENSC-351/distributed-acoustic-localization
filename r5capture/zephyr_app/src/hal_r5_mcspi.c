@@ -27,10 +27,10 @@
 #ifndef MCSPI_BASE
 #define MCSPI_BASE 0x04B00000u
 #endif
-// Functional (reference) clock of the controller. R5SPI_measure() reports the
+// Functional (reference) clock of the controller (48 MHz). R5SPI_measure() reports the
 // real SPI clock, so a wrong value here shows up immediately.
 #ifndef MCSPI_REF_HZ
-#define MCSPI_REF_HZ 50000000u
+#define MCSPI_REF_HZ 48000000u   // measured on the board: shift times at two dividers -> ~48.7 MHz
 #endif
 #ifndef MCSPI_DEFAULT_HZ
 #define MCSPI_DEFAULT_HZ 1000000u   // MCP3208: 1 MHz guaranteed at 2.7 V

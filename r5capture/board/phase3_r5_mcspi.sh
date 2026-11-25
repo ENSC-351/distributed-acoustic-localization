@@ -6,8 +6,8 @@
 # Leaves the R5 sampling at the best setting found (ready for r5cap_ring_read).
 cd "$(dirname "$0")"
 [ "$(id -u)" = 0 ] || { echo "run with sudo"; exit 1; }
-CLOCKS=${CLOCKS:-"1000000 1250000"}
-RATES=${RATES:-"12000 16000 18000 20000 22000 24000 26000 28000"}
+CLOCKS=${CLOCKS:-"1000000 1200000 1250000"}
+RATES=${RATES:-"12000 14000 16000 18000 20000 22000 24000 26000"}
 SETTLE_S=1
 MEASURE_S=3
 
@@ -20,6 +20,7 @@ NO_STOP=1 SRC=$PWD/r5capture-mcspi.elf FW=r5test-mcspi.elf ./phase1_load_ti.sh 2
 sleep 2
 
 echo "##### 3. real SPI clock and ADC values, measured on the R5"
+./r5shell.sh "r5cap stats" | grep -E "I-cache"
 for clk in $CLOCKS; do
   ./r5shell.sh "r5cap spiclk $clk" "r5cap spitest" | grep -E 'clock set|ch[01] |one frame|error'
 done
