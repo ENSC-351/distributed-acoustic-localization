@@ -2,9 +2,10 @@
 
 file(GLOB MY_SOURCES "src/*.c")
 add_executable(master ${MY_SOURCES})
+target_include_directories(master PRIVATE include)
 
-# Make use of the common library
-target_link_libraries(master LINK_PRIVATE common)
+# Make use of the common library, and libm for the demo source
+target_link_libraries(master LINK_PRIVATE common m)
 
 # Copy executable to the public NFS directory
 add_custom_command(TARGET master POST_BUILD

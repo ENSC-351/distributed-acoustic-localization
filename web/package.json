@@ -1,0 +1,13 @@
+{
+	"name": "dal-master-gui",
+	"version": "0.1.0",
+	"description": "Web GUI for the distributed acoustic localization master",
+	"private": true,
+	"main": "server.js",
+	"scripts": {
+		"start": "node server.js"
+	},
+	"dependencies": {
+		"socket.io": "~2.5"
+	}
+}

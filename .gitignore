@@ -21,3 +21,6 @@ compile_commands.json
 
 # Large recordings
 *.wav
+
+# Node.js
+node_modules/
