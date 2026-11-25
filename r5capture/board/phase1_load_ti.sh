@@ -7,8 +7,8 @@
 #   sudo rm /lib/firmware/r5test-openamp.elf
 set -u
 RP=/sys/class/remoteproc/remoteproc2
-FW=r5test-openamp.elf
-SRC=/opt/ti-zephyr-firmware/j722s/mcu-r5f0_0/zephyr_openamp_rsc_table.elf
+FW=${FW:-r5test-openamp.elf}          # name under /lib/firmware (override to test other firmware)
+SRC=${SRC:-/opt/ti-zephyr-firmware/j722s/mcu-r5f0_0/zephyr_openamp_rsc_table.elf}
 sec() { echo; echo "===== $1"; }
 
 [ "$(id -u)" = 0 ] || { echo "run with sudo"; exit 1; }
@@ -40,6 +40,10 @@ fi
 
 # T1.2 (repeated stop/start) is in phase1_cycle.sh, which checks every step.
 
+if [ "${NO_STOP:-0}" = 1 ]; then
+  sec "NO_STOP=1: leaving the R5 running (the stop would remove its RPMsg devices)"
+  exit 0
+fi
 sec "leave it stopped"
 echo stop > $RP/state || echo "stop FAILED"
 sleep 1

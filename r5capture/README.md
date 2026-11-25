@@ -8,7 +8,7 @@ the `AudioCapture_*` API that the DSP and `audio_meter` already use.
 
 | | Linux sampler today (`audio/`) | R5 sampler (target) |
 |---|---|---|
-| Samples per mic | ~9,900/s | 20,000+/s |
+| Samples per mic | ~9,900/s on Joey's board; **17,200/s measured on ours** | ~25,000/s at 1 MHz; ~31,000/s at 1.25 MHz |
 | Time per conversion | ~50 us (19 clocks + ~23 us overhead) | ~20 us (19 clocks at 1 MHz + < 1 us) |
 | Stream | 128-frame blocks with gaps between them | continuous, no gaps |
 | Timing | measured per block; some blocks "disturbed" | hardware timer; every frame on time |
@@ -23,6 +23,7 @@ conversion set the ceiling.
 - [docs/design.md](docs/design.md): architecture, timing budget, shared-memory protocol, timestamps
 - [docs/plan.md](docs/plan.md): phases, tasks, exit criteria, open questions, risks
 - [docs/test-plan.md](docs/test-plan.md): how each phase is tested and what "passing" means
+- [docs/study/](docs/study/README.md): study guide covering the theory and everything learned so far
 
 ## Layout
 

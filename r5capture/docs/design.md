@@ -33,7 +33,7 @@ high between conversions. Everything else is overhead.
 | 19 clocks | ~27 us (bit-banged, ~0.7 MHz) | 19 us at 1 MHz; 15 us at 1.25 MHz |
 | CS toggle | ~13 us (includes a fixed 10 us delay in the Linux SPI core) | < 1 us (register write) |
 | Driver work | ~10 us (spi-gpio goes through gpiolib for every clock edge) | ~0 (SPI hardware shifts the bits) |
-| **Total** | **~50 us → ~9,900 frames/s** | **~20 us → ~25,000 frames/s max** |
+| **Total** | **~50 us → ~9,900 frames/s** (Joey's board; ours measured ~28 us → 17,200/s, see study/04-linux-sampler-measured.md) | **~20 us → ~25,000 frames/s max** |
 
 Run below the maximum to leave margin: **20,000 frames/s (50 us frames) at a
 1 MHz SPI clock** is the first target. 1 MHz is the MCP3208's guaranteed clock

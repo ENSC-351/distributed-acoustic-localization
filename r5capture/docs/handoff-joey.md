@@ -17,7 +17,7 @@ drives the MCP3208 directly, and samples stream to Linux through shared memory.
 
 | | Your Linux sampler today | R5 sampler (target) |
 |---|---|---|
-| Samples per mic | ~9,900/s | 20,000+/s (1 MHz SPI); maybe ~25,000 at 1.25 MHz |
+| Samples per mic | ~9,900/s on your board; **17,200/s measured on mine** (see study/04-linux-sampler-measured.md) | ~25,000/s (1 MHz SPI); maybe ~31,000 at 1.25 MHz |
 | Per conversion | ~50 µs | ~20 µs |
 | Stream | blocks with gaps | continuous, no gaps |
 | Timing | measured per block, some disturbed | hardware timer, every frame on time |
