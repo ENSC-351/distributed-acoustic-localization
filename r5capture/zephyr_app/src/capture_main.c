@@ -131,7 +131,7 @@ static void controlApply(void)
     control->ackSeq = seq;
 }
 
-static void captureThread(void *unused1, void *unused2, void *unused3)
+R5CAP_FAST_CODE static void captureThread(void *unused1, void *unused2, void *unused3)
 {
     (void)unused1;
     (void)unused2;

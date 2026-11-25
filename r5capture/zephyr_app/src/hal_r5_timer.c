@@ -14,7 +14,7 @@
 static R5CAP_FAST_DATA uint32_t lastLow = 0;
 static R5CAP_FAST_DATA uint64_t high = 0;
 
-uint64_t R5HAL_nowTicks(void)
+R5CAP_FAST_CODE uint64_t R5HAL_nowTicks(void)
 {
     uint32_t low = sys_read32(TIMER_TCRR);
     if (low < lastLow) {

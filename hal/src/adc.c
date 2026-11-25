@@ -58,10 +58,13 @@ static const char *const modeNames[NUM_MODES] = {
 #define WORD19_SINGLE_ENDED_BIT (1u << 17)
 #define WORD19_CHANNEL_SHIFT 14
 
-// Choosing the transfer mode: compare this many readings of channel 0, and
-// accept a word mode if its average differs by at most this many counts
-#define MODE_TEST_READS 16
+// Choosing the transfer mode: compare this many readings of channel 0 with 8-bit
+// readings taken alternately, and accept a word mode if the averages differ by at
+// most this many counts, or this many standard errors if the input is noisy (a live
+// mic moves by more than the fixed limit on its own)
+#define MODE_TEST_READS 64
 #define MODE_TEST_TOLERANCE 100
+#define MODE_TEST_MAX_ERRORS 4
 #define MODE_TEST_MESSAGE_LENGTH 8
 #define MODE_TEST_ROUNDS 10
 #define MODE_TEST_CHANNEL 0
@@ -195,19 +198,49 @@ static int64_t timeShortMessageLocked(void)
     return fastest;
 }
 
-// Average of a few single readings of the test channel in the current mode,
-// or -1 if the driver rejects the mode. Caller must hold adcMutex.
-static long averageReadingLocked(void)
+// One reading of the test channel in the given mode, or -1 if the driver rejects
+// the mode. Caller must hold adcMutex.
+static long testReadingLocked(TransferMode mode)
 {
     const uint8_t channel = MODE_TEST_CHANNEL;
-    long sum = 0;
-    for (int i = 0; i < MODE_TEST_READS; i++) {
-        if (sendMessageLocked(&channel, 1, 1, ADC_DEFAULT_SPI_SPEED_HZ) < 1) {
-            return -1;
-        }
-        sum += resultLocked(0);
+    transferMode = mode;
+    if (sendMessageLocked(&channel, 1, 1, ADC_DEFAULT_SPI_SPEED_HZ) < 1) {
+        return -1;
     }
-    return sum / MODE_TEST_READS;
+    return resultLocked(0);
+}
+
+typedef enum {
+    MODE_MATCHES,
+    MODE_DIFFERS,
+    MODE_UNSUPPORTED,
+} ModeCheck;
+
+// Compares a word mode with 8-bit words, reading them alternately so that slow
+// changes of the input affect both equally. Caller must hold adcMutex.
+static ModeCheck checkModeLocked(TransferMode mode)
+{
+    double sumDiff = 0.0;
+    double sumSquares = 0.0;
+    for (int i = 0; i < MODE_TEST_READS; i++) {
+        long reference = testReadingLocked(MODE_BYTES);
+        long value = testReadingLocked(mode);
+        if (reference < 0 || value < 0) {
+            return MODE_UNSUPPORTED;
+        }
+        double diff = (double)(value - reference);
+        sumDiff += diff;
+        sumSquares += diff * diff;
+    }
+    double mean = sumDiff / MODE_TEST_READS;
+    double meanVariance = (sumSquares / MODE_TEST_READS - mean * mean) / MODE_TEST_READS;
+    bool matches = mean * mean <= (double)MODE_TEST_TOLERANCE * MODE_TEST_TOLERANCE ||
+                   mean * mean <= (double)MODE_TEST_MAX_ERRORS * MODE_TEST_MAX_ERRORS * meanVariance;
+    if (!matches) {
+        fprintf(stderr, "ADC: %s reads differently from 8-bit words (by %.0f on average), "
+                        "so not using it\n", modeNames[mode], mean);
+    }
+    return matches ? MODE_MATCHES : MODE_DIFFERS;
 }
 
 // Picks the fastest transfer mode that the SPI driver accepts and that reads
@@ -215,25 +248,18 @@ static long averageReadingLocked(void)
 static bool chooseTransferMode(void)
 {
     transferMode = MODE_BYTES;
-    long reference = averageReadingLocked();
     int64_t bestTime = timeShortMessageLocked();
-    if (reference < 0 || bestTime < 0) {
+    if (bestTime < 0) {
         perror("ADC: SPI transfer failed");
         return false;
     }
     TransferMode best = MODE_BYTES;
 
     for (int mode = MODE_BYTES + 1; mode < NUM_MODES; mode++) {
-        transferMode = (TransferMode)mode;
-        long average = averageReadingLocked();
-        if (average < 0) {
-            continue;   // Driver doesn't support this word size
-        }
-        if (labs(average - reference) > MODE_TEST_TOLERANCE) {
-            fprintf(stderr, "ADC: %s reads differently from 8-bit words (average %ld vs %ld), "
-                            "so not using it\n", modeNames[mode], average, reference);
+        if (checkModeLocked((TransferMode)mode) != MODE_MATCHES) {
             continue;
         }
+        transferMode = (TransferMode)mode;
         int64_t time = timeShortMessageLocked();
         if (time > 0 && time < bestTime) {
             bestTime = time;

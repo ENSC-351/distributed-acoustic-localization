@@ -1,6 +1,7 @@
 # Prebuilt binaries (for testing without the toolchains)
 
-Built from this commit on Madden's VM, 2026-11-25. Rebuild instead whenever the
+`r5capture-mcspi.elf`, `adc_record` and `r5cap_stream` were built on Joey's VM, the rest on
+Madden's, 2026-11-25. Rebuild instead whenever the
 sources change; these are only here so the R5 sampler can be tested on another
 board without installing Zephyr 4.5.0.
 
@@ -10,6 +11,7 @@ board without installing Zephyr 4.5.0.
 | `r5cap_ctl` | BeagleY-AI Linux (aarch64) | `../linux/r5cap_ctl.c`: start/stop/status of R5 sampling via shared memory |
 | `r5cap_status` | aarch64 | `../linux/r5cap_status.c`: ring counters |
 | `r5cap_ring_read` | aarch64 | `../linux/r5cap_ring_read.c` + `r5cap_reader.c`: R5 ring → WAV + timing text |
+| `r5cap_stream` | aarch64 | `../linux/r5cap_stream.c` + `r5cap_reader.c`: streams the ring to `../tools/live_spectrum.py` |
 | `r5cap_hb_read` | aarch64 | `../linux/r5cap_hb_read.c`: R5 heartbeat check |
 | `adc_record` | aarch64 | `../linux/adc_record.c` + `../../hal/src/adc.c`: Linux recording (same output format) |
 

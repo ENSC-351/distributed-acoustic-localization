@@ -40,7 +40,7 @@ r5capture/
 
 ## Status (2026-11-24)
 
-**Latest status and next steps: [CONTEXT.md](CONTEXT.md).** Phase 1 now passes on kernel 7.2.8
+**Latest status and next steps: [SAMPLING_CONTEXT.md](SAMPLING_CONTEXT.md).** Phase 1 now passes on kernel 7.2.8
 (see [zephyr/README.md](zephyr/README.md)). The list below is the earlier status.
 
 - **Phase 0 done:** shared-memory contract, MCP3208 encoding, capture core and Linux reader,

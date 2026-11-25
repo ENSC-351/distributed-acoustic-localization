@@ -68,6 +68,11 @@
 #define LEADING_ZERO_MASK 0xF80000u  // the 5 bits dropped from the 24-bit command
 #define MAX_RATIO 4096u
 #define RESET_WAIT_LOOPS 100000
+#define TRANSFER_TIMEOUT_TICKS 25000u    // 1 ms: never hang the R5 on a stuck transfer
+#define TRANSFER_FAILED 0xFFFFFFFFu      // more than 19 bits, so never a real reply
+
+// MCP3208: CS must stay high at least 500 ns between conversions (tCSH)
+#define CS_HIGH_TICKS 14u   // 560 ns at 25 MHz
 
 R5CAP_FAST_DATA volatile bool r5spiProfileOn = false;
 R5CAP_FAST_DATA uint32_t r5spiProfileTicks = 0;
@@ -76,6 +81,7 @@ R5CAP_FAST_DATA uint32_t r5spiProfileShiftTicks = 0;
 static R5CAP_FAST_DATA bool isReady = false;
 static R5CAP_FAST_DATA uint32_t chconf = 0;   // CH0CONF without FORCE (kept here to avoid read-modify-write)
 static R5CAP_FAST_DATA uint32_t clockHz = 0;
+static R5CAP_FAST_DATA uint64_t csHighTick = 0;   // when CS last went high
 
 const char *R5SPI_name(void)
 {
@@ -120,25 +126,40 @@ uint32_t R5SPI_setClockHz(uint32_t hz)
     return clockHz;
 }
 
-// One 19-bit word, CS asserted around it. Returns the received word.
-static inline uint32_t transferWord(uint32_t word, uint32_t *shiftTicks, uint64_t *startTick)
+// One 19-bit word, CS asserted around it. Returns the received word, or
+// TRANSFER_FAILED if the controller never finished.
+R5CAP_FAST_CODE static inline uint32_t transferWord(uint32_t word, uint32_t *shiftTicks, uint64_t *startTick)
 {
+    while (R5HAL_nowTicks() - csHighTick < CS_HIGH_TICKS) {
+    }
     sys_write32(chconf | CHCONF_FORCE, REG_CH0CONF);   // CS low
+    // Let the CS change reach the controller before loading the word. Without a gap
+    // here the word is never shifted out (seen on the board once this code ran from
+    // TCM). The timer read also covers tSUCS (100 ns).
+    (void)sys_read32(REG_CH0CONF);
+    const uint64_t start = R5HAL_nowTicks();
     if (startTick != NULL) {
-        *startTick = R5HAL_nowTicks();
+        *startTick = start;
     }
     sys_write32(word, REG_TX0);
     while ((sys_read32(REG_CH0STAT) & CHSTAT_RXS) == 0) {
+        if (R5HAL_nowTicks() - start > TRANSFER_TIMEOUT_TICKS) {
+            sys_write32(chconf, REG_CH0CONF);
+            isReady = false;   // reset the controller before the next transfer
+            return TRANSFER_FAILED;
+        }
     }
     if (shiftTicks != NULL) {
         *shiftTicks = (uint32_t)(R5HAL_nowTicks() - *startTick);
     }
     uint32_t rx = sys_read32(REG_RX0) & WORD_MASK;
     sys_write32(chconf, REG_CH0CONF);                  // CS high: ends the conversion
+    (void)sys_read32(REG_CH0CONF);                     // wait until the write has arrived
+    csHighTick = R5HAL_nowTicks();
     return rx;
 }
 
-bool R5HAL_spiTransfer(const uint8_t *tx, uint8_t *rx, uint32_t len)
+R5CAP_FAST_CODE bool R5HAL_spiTransfer(const uint8_t *tx, uint8_t *rx, uint32_t len)
 {
     if (tx == NULL || rx == NULL || len != 3 || (!isReady && !init())) {
         return false;
@@ -158,6 +179,9 @@ bool R5HAL_spiTransfer(const uint8_t *tx, uint8_t *rx, uint32_t len)
     } else {
         reply = transferWord(command & WORD_MASK, NULL, NULL);
     }
+    if (reply == TRANSFER_FAILED) {
+        return false;
+    }
     rx[0] = 0;
     rx[1] = (uint8_t)(reply >> 8);
     rx[2] = (uint8_t)reply;
@@ -174,6 +198,9 @@ bool R5SPI_measure(uint8_t channel, uint16_t *value, uint32_t *shiftTicks, uint3
     uint64_t begin = R5HAL_nowTicks();
     uint64_t shiftStart = 0;
     uint32_t reply = transferWord(word, shiftTicks, &shiftStart);
+    if (reply == TRANSFER_FAILED) {
+        return false;
+    }
     *totalTicks = (uint32_t)(R5HAL_nowTicks() - begin);
     *value = (uint16_t)(reply & 0xFFF);
     return true;

@@ -21,3 +21,6 @@ compile_commands.json
 
 # Large recordings
 *.wav
+
+# Python
+__pycache__/

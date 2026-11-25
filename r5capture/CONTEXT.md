@@ -1,6 +1,9 @@
-# R5 sampling: where we stopped (2026-11-24)
+# R5 sampling: history and toolchain (from 2026-11-24)
 
-Start here. Branch `jkolsteren/feature/r5-capture` = Joey's Linux reserved-core
+**Current status: [SAMPLING_CONTEXT.md](SAMPLING_CONTEXT.md).** The status table and next steps
+below are older.
+
+Branch `jkolsteren/feature/r5-capture` = Joey's Linux reserved-core
 sampler (`jkolsteren/feature/audio-meter`) + Madden's `madden/r5-capture` + the
 Zephyr work below. Earlier background: `docs/handoff-joey.md` (its Phase 1 status
 and "next steps" are older than this file). Findings and build notes: `zephyr/README.md`.

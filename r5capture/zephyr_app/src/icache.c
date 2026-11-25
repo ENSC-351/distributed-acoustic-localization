@@ -25,6 +25,27 @@
 // Normal memory, outer and inner write-back write-allocate: TEX=0b001, C=1, B=1
 #define DRAM_CACHE_ATTR ((1UL << MPU_RASR_TEX_Pos) | MPU_RASR_C_Msk | MPU_RASR_B_Msk)
 
+// Peripheral registers must be Device memory. Below 0x80000000 the R5's default map is
+// Normal memory, where writes to one register may be merged or reordered: with the
+// sampling loop in TCM, "CS high" and the next "CS low" can run together. The SoC code only sets up DRAM, so add the two areas we use.
+#define MPU_REGION_MCU_PERIPHERALS 6     // timers, MCSPI, VIM
+#define MCU_PERIPHERALS_BASE 0x04000000u
+#define MCU_PERIPHERALS_SIZE_FIELD 25u   // 2^(25+1) = 64 MB
+#define MPU_REGION_MAILBOX 7
+#define MAILBOX_BASE 0x29000000u
+#define MAILBOX_SIZE_FIELD 19u           // 2^(19+1) = 1 MB
+#define DEVICE_ATTR (MPU_RASR_XN_Msk | (3UL << MPU_RASR_AP_Pos) | MPU_RASR_S_Msk | MPU_RASR_B_Msk)
+
+static void setDeviceRegion(uint32_t region, uint32_t base, uint32_t sizeField)
+{
+    __asm__ volatile("mcr p15, 0, %0, c6, c2, 0" ::"r"(region));                  // RGNR
+    __asm__ volatile("isb");
+    __asm__ volatile("mcr p15, 0, %0, c6, c1, 0" ::"r"(base));                    // DRBAR
+    __asm__ volatile("mcr p15, 0, %0, c6, c1, 4" ::"r"(DEVICE_ATTR));             // DRACR
+    __asm__ volatile("mcr p15, 0, %0, c6, c1, 2" ::"r"((sizeField << 1) | 1u));   // DRSR
+    __asm__ volatile("dsb; isb" ::: "memory");
+}
+
 static inline uint32_t readSctlr(void)
 {
     uint32_t v;
@@ -34,6 +55,9 @@ static inline uint32_t readSctlr(void)
 
 static int enableInstructionCache(void)
 {
+    setDeviceRegion(MPU_REGION_MCU_PERIPHERALS, MCU_PERIPHERALS_BASE, MCU_PERIPHERALS_SIZE_FIELD);
+    setDeviceRegion(MPU_REGION_MAILBOX, MAILBOX_BASE, MAILBOX_SIZE_FIELD);
+
     // (1) Region 0 attributes (DRACR): keep access permissions and XN, change the
     //     memory type to cacheable write-back
     uint32_t dracr;

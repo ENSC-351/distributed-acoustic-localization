@@ -219,6 +219,20 @@ static void testMarkLate(void)
     CHECK(r5cap_meta(region, 2)->flags == 0);
 }
 
+// A late frame 0 must flag the block it starts, not the one before
+static void testMarkLateOnFirstFrame(void)
+{
+    struct CaptureConfig config = defaultConfig();
+    startCapture(&config);
+    runTicks(config.blockFrames);       // block 0: clean
+    CAPTURE_markLate(0);                // frame 0 of block 1 starts late
+    runTicks(2 * config.blockFrames);   // blocks 1 and 2
+    CHECK(header()->lateTicks == 1);
+    CHECK(r5cap_meta(region, 0)->flags == 0);
+    CHECK(r5cap_meta(region, 1)->flags == R5CAP_BLOCK_LATE_TICK);
+    CHECK(r5cap_meta(region, 2)->flags == 0);
+}
+
 static void testStop(void)
 {
     struct CaptureConfig config = defaultConfig();
@@ -241,6 +255,7 @@ int main(void)
     testLateTicks();
     testAdcErrorsAreFlagged();
     testMarkLate();
+    testMarkLateOnFirstFrame();
     testStop();
     return TEST_finish("test_capture");
 }

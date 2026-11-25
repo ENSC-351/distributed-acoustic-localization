@@ -21,9 +21,9 @@ target_sources(app PRIVATE src/main_remote.c src/heartbeat.c src/timer_fix.c
 target_include_directories(app PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../include ${CMAKE_CURRENT_SOURCE_DIR}/../fw)
 # The bit-banged build can start sampling on its own (no peripheral to power);
 # the McSPI build waits for "r5cap start" after the board script checks MCU_SPI0.
-# Hot variables in fast internal memory (ATCM at 0x1000, fw/r5cap_fastmem.h).
+# Sampling code and variables in fast internal memory (TCM, fw/r5cap_fastmem.h).
 # Board result: clean rate 16,000 -> 20,000 frames/s. Default on.
-option(R5CAP_FASTMEM "Put per-frame variables in the R5 ATCM" ON)
+option(R5CAP_FASTMEM "Put the sampling code and variables in the R5 TCM" ON)
 if(R5CAP_FASTMEM)
   target_compile_definitions(app PRIVATE R5CAP_USE_FASTMEM=1)
   zephyr_linker_sources(SECTIONS r5fast.ld)

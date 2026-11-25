@@ -18,6 +18,7 @@
  * The 5 leading zeros in tx byte 0 are padding so the 12-bit result ends exactly on the last byte.
  */
 #include "mcp3208.h"
+#include "r5cap_fastmem.h"
 
 #define START_BIT 0x04
 #define SINGLE_ENDED_BIT 0x02
@@ -28,7 +29,7 @@
 #define RESULT_HIGH_MASK 0x0F     // B11-B8 in the low nibble of rx byte 1
 #define BITS_PER_BYTE 8
 
-bool MCP3208_encodeCommand(uint8_t channel, uint8_t tx[MCP3208_TRANSFER_BYTES])
+R5CAP_FAST_CODE bool MCP3208_encodeCommand(uint8_t channel, uint8_t tx[MCP3208_TRANSFER_BYTES])
 {
     if (channel >= MCP3208_NUM_CHANNELS) {
         return false;
@@ -40,7 +41,7 @@ bool MCP3208_encodeCommand(uint8_t channel, uint8_t tx[MCP3208_TRANSFER_BYTES])
     return true;
 }
 
-uint16_t MCP3208_decodeResult(const uint8_t rx[MCP3208_TRANSFER_BYTES])
+R5CAP_FAST_CODE uint16_t MCP3208_decodeResult(const uint8_t rx[MCP3208_TRANSFER_BYTES])
 {
     return (uint16_t)(((rx[1] & RESULT_HIGH_MASK) << BITS_PER_BYTE) | rx[2]);
 }
