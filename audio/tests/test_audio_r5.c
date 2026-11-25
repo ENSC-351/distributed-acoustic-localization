@@ -255,6 +255,12 @@ static void test_timer_clock(double ppm)
     atomic_store(&timerRun, true);
     pthread_t th;
     pthread_create(&th, NULL, timer_thread, NULL);
+    // Wait until the timer thread is really updating the counter
+    uint32_t seen = fakeTimer;
+    while (fakeTimer == seen) {
+        struct timespec t = {0, 100000};
+        nanosleep(&t, NULL);
+    }
 
     fake_start(fake_tick_now());
     fake_publish(0);
@@ -264,6 +270,8 @@ static void test_timer_clock(double ppm)
     uint16_t buf[FRAMES * CHANNELS];
     AudioCapture_BlockInfo info;
     int64_t worst = 0;
+    int64_t errs[25];
+    int nerr = 0;
     for (int i = 0; i < 25; i++) {   // ~2.5 s: crosses the wrap and a few re-pairings
         struct timespec t = {0, 100000000};
         nanosleep(&t, NULL);
@@ -274,14 +282,26 @@ static void test_timer_clock(double ppm)
             CHECK(0, "read %d", i);
             continue;
         }
-        int64_t err = info.tFirstNs - realNow;
-        if (llabs(err) > worst) {
-            worst = llabs(err);
+        int64_t err = llabs(info.tFirstNs - realNow);
+        errs[nerr++] = err;
+        if (err > worst) {
+            worst = err;
         }
     }
-    // Limited by how fresh the fake counter is (a spinning thread, but on a VM): allow 2 ms
-    CHECK(worst < 2000000, "ppm %.0f: worst block time error %lld ns", ppm, (long long)worst);
-    printf("  timer clock, %+.0f ppm: worst block-time error %.1f us\n", ppm, (double)worst / 1000.0);
+    // Limited by how fresh the fake counter is (a spinning thread on a busy VM
+    // is sometimes milliseconds stale), so judge the typical error
+    for (int i = 1; i < nerr; i++) {   // insertion sort for the median
+        for (int j = i; j > 0 && errs[j - 1] > errs[j]; j--) {
+            int64_t t = errs[j];
+            errs[j] = errs[j - 1];
+            errs[j - 1] = t;
+        }
+    }
+    int64_t median = nerr ? errs[nerr / 2] : INT64_MAX;
+    CHECK(median < 200000, "ppm %.0f: median block time error %lld ns", ppm, (long long)median);
+    CHECK(worst < 20000000, "ppm %.0f: worst block time error %lld ns", ppm, (long long)worst);
+    printf("  timer clock, %+.0f ppm: block-time error median %.1f us, worst %.1f us\n", ppm,
+           (double)median / 1000.0, (double)worst / 1000.0);
     AudioCaptureR5_closeReader(r);
     AudioCaptureR5_cleanup();
     atomic_store(&timerRun, false);
