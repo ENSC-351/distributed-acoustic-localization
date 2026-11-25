@@ -3,6 +3,8 @@
 // every frame period into the shared-memory ring at R5CAP_SHM_PHYS, which Linux
 // reads with linux/r5cap_ring_read (via linux/r5cap_reader.c).
 //
+// Control: linux/r5cap_ctl writes commands into shared memory (r5cap_control.h),
+// checked once per block; the shell commands below work while capture is stopped.
 // Autostart: the bit-banged build starts at AUTOSTART_RATE_HZ; the McSPI build
 // waits for "r5cap start" (the board script first checks MCU_SPI0 is powered:
 // touching an unpowered module can fault the R5).
@@ -15,9 +17,10 @@
 //
 // Frame timing: a busy-wait on the 25 MHz system timer (simplest first version;
 // a hardware timer interrupt can replace it later without touching capture.c).
-// The thread runs at the lowest preemptible priority and never yields: the shell
-// (priority 13) and RPMsg (cooperative) preempt it only when Linux sends something,
-// and the heartbeat is paused while capturing. Anything that delays a frame by more
+// The thread runs at the lowest preemptible priority and never yields while
+// sampling: RPMsg (cooperative) preempts it only when Linux sends something, the
+// heartbeat is paused, and the shell (same priority) only runs while capture is
+// stopped. While sampling, control it from Linux with linux/r5cap_ctl (shared memory). Anything that delays a frame by more
 // than half a period is counted by capture.c as a late tick and flags the block.
 // (A k_yield() per block cost a context switch each time: ~1 late frame per 3 blocks
 // above 14,000 frames/s on the board.)
@@ -25,7 +28,9 @@
 #include "hal_r5_spi.h"
 #include "mcp3208.h"
 #include "r5_hal.h"
+#include "r5cap_control.h"
 #include "r5cap_heartbeat.h"
+#include <zephyr/sys/barrier.h>
 #include <zephyr/kernel.h>
 #include <zephyr/shell/shell.h>
 #include <zephyr/sys/atomic.h>
@@ -40,8 +45,8 @@
 #define BLOCK_FRAMES 128
 #define RING_BLOCKS 256
 #define CAPTURE_STACK_SIZE 2048
-#define CAPTURE_PRIORITY 14          // lowest preemptible; the shell runs at 13 (prj.conf), so it
-                                     // preempts capture only when a command arrives
+#define CAPTURE_PRIORITY 14          // lowest preemptible, same as the shell: while sampling the
+                                     // loop never yields, so use r5cap_ctl (shared memory) then
 #define IDLE_POLL_MS 10
 #define INIT_RETRY_MS 1000
 #define SPITEST_CONVERSIONS 200
@@ -73,13 +78,61 @@ static void pauseBackgroundWork(bool pause)
     }
 }
 
+// ---- Control from Linux through shared memory (r5cap_control.h) ----
+static volatile struct r5cap_control *const control = (struct r5cap_control *)R5CAP_CONTROL_PHYS;
+static uint32_t controlSeqSeen = 0;
+
+static void controlInit(void)
+{
+    control->magic = 0;
+    control->seq = 0;
+    control->rateHz = 0;
+    control->spiHz = 0;
+    control->ackSeq = 0;
+    control->ackSpiHz = 0;
+    control->ackRateHz = 0;
+    controlSeqSeen = 0;
+    barrier_dmem_fence_full();
+    control->magic = R5CAP_CONTROL_MAGIC;
+}
+
+static inline bool controlPending(void)
+{
+    return control->seq != controlSeqSeen;
+}
+
+// Called with capture stopped: apply a new command from Linux, then acknowledge it
+static void controlApply(void)
+{
+    uint32_t seq = control->seq;
+    barrier_dmem_fence_full();   // read the command after seeing the new seq
+    uint32_t rate = control->rateHz;
+    uint32_t spi = control->spiHz;
+    if (spi != 0) {
+        uint32_t actual = R5SPI_setClockHz(spi);
+        if (actual != 0) {
+            spiClockHz = actual;
+        }
+    }
+    atomic_set(&requestedRate, (rate <= MAX_RATE_HZ) ? (atomic_val_t)rate : 0);
+    control->ackSpiHz = spiClockHz;
+    control->ackRateHz = (uint32_t)atomic_get(&requestedRate);
+    controlSeqSeen = seq;
+    barrier_dmem_fence_full();
+    control->ackSeq = seq;
+}
+
 static void captureThread(void *unused1, void *unused2, void *unused3)
 {
     (void)unused1;
     (void)unused2;
     (void)unused3;
 
+    controlInit();
     for (;;) {
+        if (controlPending()) {
+            controlApply();
+        }
         atomic_val_t rate = atomic_get(&requestedRate);
         if (rate == 0) {
             k_msleep(IDLE_POLL_MS);
@@ -100,8 +153,11 @@ static void captureThread(void *unused1, void *unused2, void *unused3)
         atomic_set(&capturing, 1);
         pauseBackgroundWork(true);
 
+        // Hot loop: nothing but waiting for the next frame and sampling it.
+        // Commands (shared memory or shell) are checked once per block only.
         uint64_t next = R5HAL_nowTicks();
-        while (atomic_get(&requestedRate) == rate) {
+        uint32_t framesInBlock = 0;
+        for (;;) {
             next += period;
             uint64_t now = R5HAL_nowTicks();
             if (now > next + period) {
@@ -111,6 +167,12 @@ static void captureThread(void *unused1, void *unused2, void *unused3)
                 now = R5HAL_nowTicks();
             }
             CAPTURE_tick();
+            if (++framesInBlock == BLOCK_FRAMES) {
+                framesInBlock = 0;
+                if (controlPending() || atomic_get(&requestedRate) != rate) {
+                    break;
+                }
+            }
         }
         CAPTURE_stop();
         pauseBackgroundWork(false);

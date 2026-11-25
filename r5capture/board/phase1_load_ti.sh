@@ -34,7 +34,7 @@ for t in /sys/kernel/debug/remoteproc/remoteproc2/trace*; do [ -e "$t" ] && { ec
 if [ -e /dev/ttyRPMSG0 ]; then
   echo "-- Zephyr shell over RPMsg: sending 'kernel version'"
   stty -F /dev/ttyRPMSG0 raw -echo 2>/dev/null
-  ( sleep 0.3; printf 'kernel version\r\n' > /dev/ttyRPMSG0 ) &
+  ( sleep 0.3; timeout 2 sh -c "printf 'kernel version\r\n' > /dev/ttyRPMSG0" ) > /dev/null 2>&1 &
   timeout 2 cat /dev/ttyRPMSG0
 fi
 

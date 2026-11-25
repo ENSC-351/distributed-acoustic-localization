@@ -7,7 +7,8 @@ TTY=${TTY:-$(ls /dev/ttyRPMSG* 2>/dev/null | head -1)}
 stty -F "$TTY" raw -echo
 for cmd in "$@"; do
   echo "### $cmd"
-  ( sleep 0.3; printf '%s\r\n' "$cmd" > "$TTY" ) &
+  # Bounded, and not holding our stdout: a blocked tty write must never hang the caller
+  ( sleep 0.3; timeout 2 sh -c 'printf "%s\r\n" "$1" > "$2"' _ "$cmd" "$TTY" ) > /dev/null 2>&1 &
   timeout 1.5 cat "$TTY" | tr -d '\r'
   echo
 done

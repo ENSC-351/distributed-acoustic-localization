@@ -16,7 +16,7 @@ echo "##### 1. MCU_SPI0 powered and owned by the expected controller?"
 [ "$(cat /sys/class/remoteproc/remoteproc2/state)" = offline ] || { echo "R5 not offline: sudo reboot first"; exit 1; }
 
 echo "##### 2. load r5capture-mcspi.elf (does not start sampling by itself)"
-NO_STOP=1 SRC=$PWD/r5capture-mcspi.elf FW=r5test-mcspi.elf ./phase1_load_ti.sh 2>&1 | grep -E 'state=|is now up|Zephyr version|error|fail'
+NO_STOP=1 SRC=$PWD/r5capture-mcspi.elf FW=r5test-mcspi.elf ./phase1_load_ti.sh 2>&1 | grep --line-buffered -E 'state=|is now up|Zephyr version|error|fail'
 sleep 2
 
 echo "##### 3. real SPI clock and ADC values, measured on the R5"
@@ -25,14 +25,12 @@ for clk in $CLOCKS; do
   ./r5shell.sh "r5cap spiclk $clk" "r5cap spitest" | grep -E 'clock set|ch[01] |one frame|error'
 done
 
-echo "##### 4. sweep: late frames counted from Linux over ${MEASURE_S} s (R5 left undisturbed)"
+echo "##### 4. sweep, controlled through shared memory (r5cap_ctl); late frames counted over ${MEASURE_S} s"
 printf "%10s %8s %10s %10s %10s %8s\n" "SPI Hz" "rate" "blocks/s" "expected" "late" "ADCerr"
 best_rate=0; best_clk=0
 for clk in $CLOCKS; do
-  ./r5shell.sh "r5cap stop" > /dev/null; sleep 0.3
-  ./r5shell.sh "r5cap spiclk $clk" > /dev/null
   for rate in $RATES; do
-    ./r5shell.sh "r5cap start $rate" > /dev/null
+    ./r5cap_ctl start $rate $clk > /dev/null || { echo "r5cap_ctl failed"; exit 1; }
     sleep $SETTLE_S
     a=$(./r5cap_status); sleep $MEASURE_S; b=$(./r5cap_status)
     get() { echo "$1" | grep -o "$2=[0-9]*" | cut -d= -f2; }
@@ -51,11 +49,10 @@ done
 echo "##### 5. result"
 if [ "$best_rate" = 0 ]; then
   echo "no setting ran without late frames; leaving capture stopped"
-  ./r5shell.sh "r5cap stop" > /dev/null
+  ./r5cap_ctl stop
   exit 1
 fi
 echo "fastest clean setting: $best_rate frames/s per mic at SPI $best_clk Hz"
-./r5shell.sh "r5cap stop" > /dev/null; sleep 0.3
-./r5shell.sh "r5cap spiclk $best_clk" "r5cap start $best_rate" | grep -E 'clock set|starting'
-sleep 1; ./r5cap_status
+./r5cap_ctl start $best_rate $best_clk
+sleep 1; ./r5cap_ctl status
 echo "R5 is sampling. Record with:  sudo ./r5cap_ring_read 10 > r5taps.wav 2> r5taps.txt"
