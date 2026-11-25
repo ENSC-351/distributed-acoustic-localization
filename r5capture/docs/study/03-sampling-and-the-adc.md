@@ -73,10 +73,11 @@ there on purpose).
 |---|---|---|---|
 | ~0.68 MHz (Linux bit-banging, today) | ~28 µs | 17,200/s | measured |
 | 1.0 MHz | ~19–20 µs | ~25,000/s | in spec (rated 1 MHz at 2.7 V) |
-| 1.25 MHz | ~15–16 µs | ~31,000/s | edge of spec at 3.3 V (interpolated); check accuracy |
+| 1.25 MHz (~1.23 actual) | ~15–16 µs | ~31,000/s theoretical; **24,000 measured on the R5** | edge of spec at 3.3 V (interpolated); check accuracy |
 | 2.0 MHz | ~10 µs | ~50,000/s | out of spec at 3.3 V (rated at 5 V) |
 
-Realistic ceiling ≈ **1.5–1.8× today**. To go faster, the clock must go faster, which
+Realistic ceiling ≈ **1.5–1.8× the Linux sampler**. Achieved on the R5: **24,000/s per mic**
+(chapters 9-10). The ADC's limit is shared between channels (~60 ksps total at 3.3 V, *estimate*). To go faster, the clock must go faster, which
 needs a hardware SPI controller (MCU_SPI0 is probably on these pins; to confirm).
 Ways: (A) bigger spidev buffer (fewer gaps, same clock), (B) hardware SPI on Linux,
 (C) R5 + hardware SPI, (D) R5 bit-banging GPIO.

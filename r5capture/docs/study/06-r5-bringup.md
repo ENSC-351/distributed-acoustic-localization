@@ -98,8 +98,23 @@ unfixed upstream (2026-11-25); worth reporting.
 
 Why TI's demo didn't show it: nothing in it ever sleeps (shell and RPMsg run on mailbox interrupts).
 
-## Where Phase 1 stands
+## Bug 3: BTCM isn't reachable (found with the crash recorder)
 
-Done: our firmware (Zephyr 4.5.0) loads, runs, keeps time, shares memory with Linux, and
-talks RPMsg. Next: shutdown handshake (reload without reboot), then the real ring (Phase 2),
-then SPI to the MCP3208 (Phase 3).
+Covered in chapter 10: reads of 0x41010000 from this core give a synchronous external abort.
+The fatal-error handler (`zephyr_app/src/fatal.c`) records reason, PC, LR and the CP15 fault
+registers in shared memory; `r5cap_ctl crash` prints them even though the R5 has stopped.
+
+## Two "hangs" that weren't the R5
+
+- A script that wrote to the R5's RPMsg tty in a background job: when the write blocked
+  (shell not ready right after boot), the job kept the script's output pipe open and the
+  script waited forever. Fix: time-limit tty writes and don't let them hold stdout.
+- Once the whole board froze (no ping) while loading firmware; the next load of the same
+  build worked. Not reproduced. Keep `ping` running when testing.
+
+## Where it stands (2026-11-25)
+
+Our firmware (Zephyr 4.5.0) loads, keeps time, shares memory with Linux, talks RPMsg, and
+**samples the MCP3208 at 24,000 samples/s per mic** (chapters 9 and 10). Still to do: shutdown
+handshake (reload without reboot on the TI 6.1 kernel), and making the R5 a backend of
+`AudioCapture` so the detector and estimator use its samples.

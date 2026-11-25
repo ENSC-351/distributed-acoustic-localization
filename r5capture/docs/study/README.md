@@ -1,6 +1,6 @@
 # Study guide: distributed acoustic localization
 
-Everything learned on this project up to 2026-11-25, organized to study from.
+Everything learned on this project up to 2026-11-25 (evening), organized to study from.
 Read in order; each file builds on the previous ones. Numbers are **measured** on
 our BeagleY-AI unless marked *estimate*. Raw data: [`../results/`](../results).
 
@@ -14,6 +14,8 @@ our BeagleY-AI unless marked *estimate*. Raw data: [`../results/`](../results).
 | 6 | [06-r5-bringup.md](06-r5-bringup.md) | The R5 core: remoteproc, RPMsg, Zephyr, memory map, and the bugs we hit and how we found them |
 | 7 | [07-testing-and-debugging-methods.md](07-testing-and-debugging-methods.md) | The general techniques that worked: simulation, mutation tests, stress tests, register dumps |
 | 8 | [08-glossary-and-questions.md](08-glossary-and-questions.md) | Every term in one place, plus open questions to study |
+| 9 | [09-r5-sampler.md](09-r5-sampler.md) | How the R5 samples the ADC: McSPI, frame timing, control through shared memory, results, the ADC's limits |
+| 10 | [10-memory-and-optimization.md](10-memory-and-optimization.md) | Memories and caches on the R5, the MPU, TCM, and each optimization step from ~4k to 24k samples/s |
 
 Quick-reference numbers:
 
@@ -22,6 +24,8 @@ Quick-reference numbers:
 | Speed of sound | 343 m/s (≈ 34 cm per ms, ≈ 1 cm per 29 µs) |
 | Max delay at 10 cm spacing | 0.29 ms |
 | Linux sampler on our board | 17,200 samples/s per mic, 27.6 µs mic-to-mic skew |
-| MCP3208 conversion | 19 SPI clocks; ceiling ~25,000/s per mic at 1 MHz (*estimate*) |
+| MCP3208 conversion | 19 SPI clocks; limit ~60 ksps total at 3.3 V (*estimate*) = ~30,000/s per mic with 2 mics |
+| **R5 sampler (final)** | **24,000 samples/s per mic, 0 late frames**, SPI ~1.23 MHz, interrupts off |
+| R5 register access / DRAM access / TCM access | ~0.7 µs / ~150 ns (*estimate*) / ~1 cycle |
 | DSP estimate on the board | ~7 ms per 960-sample window (full cross-correlation) |
 | R5 heartbeat | 20 updates in 2.004 s (100 ms period), read correctly from Linux |

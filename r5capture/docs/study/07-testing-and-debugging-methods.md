@@ -64,3 +64,32 @@ shell command early: it costs little and turns guesses into facts.
 
 Load firmware under a test name at runtime instead of rewriting boot files; scripts refuse
 to act when the state is unexpected (e.g. R5 not offline) instead of stacking mistakes.
+
+## Record crashes where you can read them
+
+A firmware that dies looks like "it stopped answering". A fatal-error handler that writes
+the reason, PC and fault registers into shared memory turned a guessing game into one run:
+the BTCM fault address was printed directly (`r5cap_ctl crash`, then `addr2line` on the PC).
+
+## Measure against the schedule, not the previous event
+
+The first late-frame counter compared each frame with the previous one, so a steadily
+overloaded loop looked perfect. Measure lateness against the schedule, and cross-check with
+a quantity that can't lie (delivered blocks per second vs requested).
+
+## Observing changes what you observe
+
+- Asking the R5's shell for statistics while sampling took CPU from the capture loop and
+  made frames late. Read counters from shared memory instead.
+- Profiling probes cost ~30 µs per frame at first. Compare instrumented and un-instrumented runs.
+
+## Find the period of a disturbance
+
+Recording the time of each late frame showed gaps of exactly 20.0 ms (and multiples): a
+50 Hz periodic interrupt. A periodic cause and random DRAM stalls look the same in a count;
+the timing pattern tells them apart. Then one experiment (interrupts off) confirmed it.
+
+## Change one thing at a time from a known-good build
+
+Every optimization kept the previous build as a fallback file (e.g. `r5capture-20k.elf`) and
+was an opt-in build option until it passed on the board.
