@@ -1,4 +1,6 @@
-# Audio library
+# Audio library (Linux reserved-core version)
+
+Background, measurements and what comes next: [CONTEXT.md](CONTEXT.md).
 
 Samples the node's two microphones through the MCP3208 ADC as fast as the
 hardware allows, and hands the raw samples to any code that needs them
@@ -55,9 +57,8 @@ and a recorder can all run at once. The sampling thread never waits for
 readers. A reader that falls more than about 1.5 s behind skips ahead and
 sees `blocksSkipped > 0`.
 
-**Use `info.framePeriodNs` from each block, not a fixed sample rate.** On the
-current board setup the rate follows the CPU clock (see below), so each block
-reports its own measured period.
+**Use `info.framePeriodNs` from each block, not a fixed sample rate.** It is
+measured for each block.
 
 ## How sampling works
 
@@ -89,48 +90,30 @@ example the block mean, before an FFT or correlation.
 
 ## Sample rate on the BeagleY-AI
 
-Measured on the board: **about 9,900 samples per second per mic** (two mics),
-with each conversion taking about 50 us.
+Measured with two channels, hardware SPI (MCU_SPI0) and a reserved core:
 
-The limit is the SPI bus, not this code. The overlay in use
-(`k3-am67a-beagley-ai-spidev0-fixed.dtbo`) sets up SPI0 with the `spi-gpio`
-driver, which bit-bangs the pins from software:
+| SPI clock | Samples/s per mic | Mic 1 lag |
+|---|---|---|
+| 1 MHz (default) | 12,792 | 39.1 us |
+| 1.25 MHz | 14,205 | 35.2 us |
 
-- **The SPI clock is about 0.7 MHz, whatever speed is asked for.** spi-gpio
-  ignores the requested speed and toggles the pins as fast as the CPU allows.
-  So `spiSpeedHz` currently has no effect.
-- **The rate depends on the CPU clock.** If the CPU frequency governor changes
-  the clock, the sample rate changes with it. For a steady rate, use the
-  `performance` governor:
-  ```
-  echo performance | sudo tee /sys/devices/system/cpu/cpufreq/policy*/scaling_governor
-  ```
-- **About 23 us of every conversion is fixed cost**: roughly 13 us releasing
-  and re-asserting chip select (Linux adds a 10 us delay there that spidev
-  can't change), and the rest in the driver.
+At 1 MHz each conversion takes about 39 us: 19 clocks plus about 18 us of
+fixed cost in Linux, mostly its 10 us chip-select delay. Stay at or below
+1.25 MHz on a 3.3 V supply.
 
-To get the most out of spi-gpio, each conversion is sent as one 19-bit SPI
-word, the fewest clocks an MCP3208 conversion needs, instead of three bytes
-(24 clocks). This took the rate from about 8,700 to about 9,900 per mic. At
-startup the HAL checks that the 19-bit (and 24-bit) framing reads the same
-values as plain bytes before using it, and falls back if not.
-
-**Going faster needs hardware SPI.** The AM67A has hardware SPI controllers.
-If the pins used for the ADC can be driven by one (a different overlay), the
-requested clock would apply. At 1 to 2 MHz that would allow roughly 15,000 to
-20,000 samples per second per mic. Check with the course staff first: the
-"-fixed" overlay may use spi-gpio for a reason.
+Capture runs on a CPU core reserved with `isolcpus=`, because the SPI driver
+polls and keeps that core 100% busy. `AudioCapture_init()` fails if no core is
+reserved. Set up the board with `overlays/README.md`.
 
 ### Checking the setup
 
 ```
 sudo ./audio_meter --spi-diag   # real SPI clock and where the time goes
 sudo ./audio_meter --bench      # rate, gaps, disturbed blocks, noise at each SPI clock
-readlink /sys/class/spi_master/spi0/device/driver   # spi_gpio = bit-banged
+readlink /sys/class/spi_master/spi*/device/driver   # want omap2_mcspi
 ```
 
-Run as root (or with `CAP_SYS_NICE`) so the sampling thread gets real-time
-priority; this keeps the gaps between blocks small.
+Run as root, for access to SPI.
 
 ## Raising the spidev buffer size (recommended)
 

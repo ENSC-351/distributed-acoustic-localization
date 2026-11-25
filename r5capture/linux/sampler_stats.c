@@ -8,6 +8,12 @@
 //     seconds          how long to measure (default 30)
 //     reader_delay_us  extra work per block in the reader, to see when a slow
 //                      consumer (like the DSP) starts losing blocks (default 0)
+//
+// Build against the audio library you want to measure. The results in
+// docs/results/stats_*.txt (17,200 samples/s per mic) were measured with the
+// bit-banged library (audio/ at d341a96) on kernel 6.1. The current library
+// (Joey's hardware-SPI, reserved-core version) needs the MCU_SPI0 overlay and
+// isolcpus= (overlays/README.md), and refuses to start without them.
 #include "audio/audio_capture.h"
 #include "hal/adc.h"
 #include <stdint.h>

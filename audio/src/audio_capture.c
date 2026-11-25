@@ -1,3 +1,7 @@
+// Linux reserved-core sampler: see audio/CONTEXT.md
+
+// For pinning the sampling thread to a CPU core
+#define _GNU_SOURCE
 #include "audio/audio_capture.h"
 #include "hal/adc.h"
 #include <errno.h>
@@ -11,7 +15,6 @@
 
 #define DEFAULT_BLOCK_FRAMES 128
 #define DEFAULT_RING_BLOCKS 160
-#define DEFAULT_REALTIME_PRIORITY 50
 #define DEFAULT_CHANNEL_MIC0 0
 #define DEFAULT_CHANNEL_MIC1 1
 #define DEFAULT_NUM_CHANNELS 2
@@ -24,7 +27,7 @@
 
 // A block whose measured frame period differs from the running average by
 // more than this fraction is flagged as disturbed (for example, an interrupt
-// paused the bit-banged SPI transfer partway through)
+// paused the SPI transfer partway through)
 #define DISTURBED_FRACTION 0.05
 
 // The running average of the frame period follows changes over about this many blocks
@@ -36,6 +39,9 @@
 
 // After a failed SPI message, wait this long before retrying
 #define ERROR_RETRY_NS (1 * NS_PER_MS)
+
+// Cores reserved with the isolcpus= boot argument, such as "3" or "2-3" (empty if none)
+#define ISOLATED_CPUS_PATH "/sys/devices/system/cpu/isolated"
 
 #define NS_PER_S 1000000000LL
 #define NS_PER_MS 1000000LL
@@ -51,6 +57,7 @@ static double framePeriodNs = 0.0;
 static double callOverheadNs = 0.0;
 static bool isRunning = false;
 static pthread_t samplerThread;
+static int reservedCpu = AUDIO_CAPTURE_NO_CPU;   // Set when capture starts
 static atomic_bool stopRequested;
 
 // Ring of blocks. Block number s is stored in slot s % ringBlocks. The sampling
@@ -172,8 +179,7 @@ static void *samplerLoop(void *arg)
         }
 
         // Measure this block's frame period from how long the call took.
-        // With a bit-banged SPI bus (spi-gpio) the bit timing follows the CPU
-        // clock, so the rate can drift; measuring every block tracks that.
+        // Measuring every block also tracks any drift in the rate.
         double blockPeriod = ((double)(callEnd - callStart) - callOverheadNs) / config.blockFrames;
         if (blockPeriod <= 0.0) {
             blockPeriod = average;
@@ -246,9 +252,6 @@ static bool isValidConfig(const AudioCapture_Config *c)
                 c->numChannels);
         return false;
     }
-    if (c->realtimePriority < 0 || c->realtimePriority > sched_get_priority_max(SCHED_FIFO)) {
-        return false;
-    }
     for (int i = 0; i < c->numChannels; i++) {
         if (c->channels[i] >= ADC_NUM_CHANNELS) {
             return false;
@@ -281,34 +284,46 @@ static bool fitBlockToSpidev(AudioCapture_Config *c)
     return true;
 }
 
+// The first core reserved with isolcpus=, or AUDIO_CAPTURE_NO_CPU
+static int findReservedCpu(void)
+{
+    int cpu = AUDIO_CAPTURE_NO_CPU;
+    FILE *file = fopen(ISOLATED_CPUS_PATH, "r");
+    if (file != NULL) {
+        if (fscanf(file, "%d", &cpu) != 1 || cpu < 0 || cpu >= CPU_SETSIZE) {
+            cpu = AUDIO_CAPTURE_NO_CPU;
+        }
+        fclose(file);
+    }
+    return cpu;
+}
+
+// Starts the sampling thread pinned to the reserved core. Nothing else is
+// scheduled there, so it can poll SPI without resting. It uses normal priority
+// on purpose: real-time priority would starve the kernel's own work on that
+// core, which stalls the whole system.
 static bool startSamplerThread(void)
 {
-    if (config.realtimePriority > 0) {
-        pthread_attr_t attr;
-        struct sched_param param = { .sched_priority = config.realtimePriority };
-        pthread_attr_init(&attr);
-        pthread_attr_setinheritsched(&attr, PTHREAD_EXPLICIT_SCHED);
-        pthread_attr_setschedpolicy(&attr, SCHED_FIFO);
-        pthread_attr_setschedparam(&attr, &param);
-        int err = pthread_create(&samplerThread, &attr, samplerLoop, NULL);
-        pthread_attr_destroy(&attr);
-        if (err == 0) {
-            return true;
-        }
-        if (err != EPERM) {
-            fprintf(stderr, "AudioCapture: unable to create sampling thread: %s\n", strerror(err));
-            return false;
-        }
-        fprintf(stderr, "AudioCapture: no permission for real-time priority, using normal "
-                        "priority (run as root for smaller gaps between blocks)\n");
-    }
+    cpu_set_t cpus;
+    CPU_ZERO(&cpus);
+    CPU_SET((size_t)reservedCpu, &cpus);
 
-    int err = pthread_create(&samplerThread, NULL, samplerLoop, NULL);
-    if (err != 0) {
-        fprintf(stderr, "AudioCapture: unable to create sampling thread: %s\n", strerror(err));
-        return false;
+    pthread_attr_t attr;
+    struct sched_param param = { .sched_priority = 0 };
+    pthread_attr_init(&attr);
+    pthread_attr_setinheritsched(&attr, PTHREAD_EXPLICIT_SCHED);
+    pthread_attr_setschedpolicy(&attr, SCHED_OTHER);
+    pthread_attr_setschedparam(&attr, &param);
+    int err = pthread_attr_setaffinity_np(&attr, sizeof(cpus), &cpus);
+    if (err == 0) {
+        err = pthread_create(&samplerThread, &attr, samplerLoop, NULL);
     }
-    return true;
+    pthread_attr_destroy(&attr);
+    if (err != 0) {
+        fprintf(stderr, "AudioCapture: unable to start sampling on reserved CPU %d: %s\n",
+                reservedCpu, strerror(err));
+    }
+    return err == 0;
 }
 
 static void freeRing(void)
@@ -331,7 +346,6 @@ AudioCapture_Config AudioCapture_defaultConfig(void)
         .blockFrames = DEFAULT_BLOCK_FRAMES,
         .spiSpeedHz = ADC_DEFAULT_SPI_SPEED_HZ,
         .ringBlocks = DEFAULT_RING_BLOCKS,
-        .realtimePriority = DEFAULT_REALTIME_PRIORITY,
     };
     return defaults;
 }
@@ -352,6 +366,12 @@ bool AudioCapture_init(const AudioCapture_Config *userConfig)
     }
     if (newConfig.spiSpeedHz == 0) {
         newConfig.spiSpeedHz = ADC_DEFAULT_SPI_SPEED_HZ;
+    }
+
+    reservedCpu = findReservedCpu();
+    if (reservedCpu == AUDIO_CAPTURE_NO_CPU) {
+        fprintf(stderr, "AudioCapture: no reserved CPU core. Boot with isolcpus=3 (see overlays/README.md)\n");
+        return false;
     }
 
     if (!ADC_init()) {
@@ -466,6 +486,11 @@ int AudioCapture_getNumChannels(void)
 int AudioCapture_getBlockFrames(void)
 {
     return config.blockFrames;
+}
+
+int AudioCapture_getReservedCpu(void)
+{
+    return reservedCpu;
 }
 
 uint32_t AudioCapture_getSpiSpeedHz(void)

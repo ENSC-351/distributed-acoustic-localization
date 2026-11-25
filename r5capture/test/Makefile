@@ -41,9 +41,10 @@ $(OUT)/test_ring: test_ring.c $(CORE) ../linux/r5cap_reader.c $(HDRS)
 	@mkdir -p $(OUT)
 	$(CC) $(CFLAGS) $(INC) -pthread test_ring.c $(CORE) ../linux/r5cap_reader.c -o $@
 
+# linux/sampler_stats.c uses Joey's audio library (../../audio, ../../hal)
 arm-check:
 	@set -e; for f in ../fw/*.c ../linux/*.c; do \
-		aarch64-linux-gnu-gcc $(CFLAGS) $(INC) -c $$f -o /dev/null; \
+		aarch64-linux-gnu-gcc $(CFLAGS) -D_DEFAULT_SOURCE $(INC) -I../../audio/include -I../../hal/include -c $$f -o /dev/null; \
 		echo "aarch64 OK: $$f"; \
 	done
 

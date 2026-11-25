@@ -11,7 +11,8 @@
 #include <sys/ioctl.h>
 #include <linux/spi/spidev.h>
 
-#define SPI_DEVICE "/dev/spidev0.0"
+#define DEFAULT_SPI_DEVICE "/dev/spidev0.0"
+#define SPI_DEVICE_ENV "ADC_SPI_DEVICE"
 
 // MCP3208 command format (24 clocks per conversion):
 //   byte 0: 0 0 0 0 0 START SGL D2
@@ -95,9 +96,13 @@ static int64_t nowNs(void)
 // Opens and configures the SPI device. Caller must hold adcMutex.
 static bool openSpi(void)
 {
-    spiFd = open(SPI_DEVICE, O_RDWR);
+    const char *device = getenv(SPI_DEVICE_ENV);
+    if (device == NULL || device[0] == '\0') {
+        device = DEFAULT_SPI_DEVICE;
+    }
+    spiFd = open(device, O_RDWR);
     if (spiFd < 0) {
-        perror("ADC: unable to open " SPI_DEVICE);
+        fprintf(stderr, "ADC: unable to open %s: %s\n", device, strerror(errno));
         return false;
     }
 

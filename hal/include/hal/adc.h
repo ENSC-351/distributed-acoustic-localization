@@ -41,7 +41,8 @@
 #define ADC_MAX_CONVERSIONS_PER_READ 511
 
 /**
- * @brief Opens and configures the SPI device (if not already open).
+ * @brief Opens and configures the SPI device (if not already open):
+ *        /dev/spidev0.0, or the ADC_SPI_DEVICE environment variable if set.
  * @return true on success, false if the SPI device could not be set up.
  */
 bool ADC_init(void);

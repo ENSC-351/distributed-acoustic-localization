@@ -3,6 +3,9 @@
  * @brief Samples the microphones as fast as the ADC allows and hands out the
  *        raw samples in timestamped blocks, for signal analysis.
  *
+ * This is the Linux reserved-core version (see audio/CONTEXT.md). It needs
+ * hardware SPI and a CPU core reserved with isolcpus= (see overlays/README.md).
+ *
  * One background thread reads each block of samples in a single SPI message,
  * so the SPI hardware, not software timing, sets the spacing between samples.
  * The sample rate is therefore set by the SPI clock rather than chosen
@@ -59,6 +62,9 @@
 // Most microphones one capture can sample
 #define AUDIO_CAPTURE_MAX_CHANNELS 8
 
+// AudioCapture_getReservedCpu() when no core is reserved
+#define AUDIO_CAPTURE_NO_CPU (-1)
+
 // Fewest frames per block (needed to measure the sample rate)
 #define AUDIO_CAPTURE_MIN_BLOCK_FRAMES 8
 
@@ -69,8 +75,6 @@ typedef struct {
                                                     //   may not exceed ADC_MAX_CONVERSIONS_PER_READ.
     uint32_t spiSpeedHz;                            // SPI clock; sets the sample rate. See ADC_DEFAULT_SPI_SPEED_HZ.
     int ringBlocks;                                 // Blocks kept in memory; a reader further behind than this loses data
-    int realtimePriority;                           // SCHED_FIFO priority (1-99) for the sampling thread, or 0 for
-                                                    //   normal scheduling. Needs root; falls back to normal if not allowed.
 } AudioCapture_Config;
 
 typedef struct {
@@ -107,7 +111,7 @@ typedef struct AudioCapture_Reader AudioCapture_Reader;
 
 /**
  * @brief Default settings: ADC channels 0 and 1, 128-frame blocks, the
- *        default SPI clock, about 1.5 s of buffering, real-time priority 50.
+ *        default SPI clock, about 1.5 s of buffering.
  */
 AudioCapture_Config AudioCapture_defaultConfig(void);
 
@@ -115,7 +119,7 @@ AudioCapture_Config AudioCapture_defaultConfig(void);
  * @brief Initializes the ADC, measures the sample rate, and starts sampling.
  *        Takes about a quarter of a second to measure the rate.
  * @param config Settings to use, or NULL for AudioCapture_defaultConfig().
- * @return true on success; false on bad config, ADC failure, or thread failure.
+ * @return true on success; false on bad config, no reserved core, ADC failure, or thread failure.
  */
 bool AudioCapture_init(const AudioCapture_Config *config);
 
@@ -127,14 +131,17 @@ bool AudioCapture_init(const AudioCapture_Config *config);
 void AudioCapture_cleanup(void);
 
 // Settings and measured timing of the running capture. The sample rate is
-// measured at startup and then kept up to date from every undisturbed block,
-// since with a bit-banged SPI bus it follows the CPU clock.
+// measured at startup and then kept up to date from every undisturbed block.
 double AudioCapture_getSampleRateHz(void);      // Frames per second inside a block (per microphone)
 double AudioCapture_getFramePeriodNs(void);
 double AudioCapture_getChannelOffsetNs(int mic);   // How long after mic 0 this mic is sampled in each frame
 int AudioCapture_getNumChannels(void);
 int AudioCapture_getBlockFrames(void);
 uint32_t AudioCapture_getSpiSpeedHz(void);
+
+// The CPU core (reserved with the isolcpus= boot argument) that sampling runs
+// on, or AUDIO_CAPTURE_NO_CPU before capture has started.
+int AudioCapture_getReservedCpu(void);
 
 /**
  * @brief Copies the sampling statistics (updated once per block).
