@@ -1,0 +1,40 @@
+
+===== before
+name=79000000.r5f state=offline firmware=j722s-mcu-r5f0_0-fw
+
+===== load and start (T1.1)
+'/opt/ti-zephyr-firmware/j722s/mcu-r5f0_0/zephyr_openamp_rsc_table.elf' -> '/lib/firmware/r5test-openamp.elf'
+rpmsg_tty module loaded
+state=running firmware=r5test-openamp.elf
+[  881.165869] remoteproc remoteproc2: powering up 79000000.r5f
+[  881.167973] remoteproc remoteproc2: Booting fw image r5test-openamp.elf, size 1392080
+[  881.169558] rproc-virtio rproc-virtio.8.auto: assigned reserved memory node mcu-r5fss-dma-memory-region@a1000000
+[  881.175529] virtio_rpmsg_bus virtio1: rpmsg host is online
+[  881.175621] rproc-virtio rproc-virtio.8.auto: registered virtio1 (type 7)
+[  881.175633] remoteproc remoteproc2: remote processor 79000000.r5f is now up
+[  881.179114] virtio_rpmsg_bus virtio1: creating channel rpmsg-tty addr 0x400
+[  881.181105] virtio_rpmsg_bus virtio1: creating channel rpmsg-client-sample addr 0x401
+
+===== what the R5 offers Linux
+crw------- 1 root root    234, 0 Nov 18 17:10 /dev/rpmsg0
+crw------- 1 root root    511, 0 Nov 18 17:10 /dev/rpmsg_ctrl0
+crw------- 1 root root    511, 1 Nov 18 17:24 /dev/rpmsg_ctrl1
+crw-rw---- 1 root dialout 510, 0 Nov 18 17:24 /dev/ttyRPMSG0
+virtio0.rpmsg_chrdev.-1.14
+virtio0.rpmsg_ctrl.0.0
+virtio0.rpmsg_ns.53.53
+virtio0.ti.ipc4.ping-pong.-1.13
+virtio1.rpmsg-client-sample.-1.1025
+virtio1.rpmsg-tty.-1.1024
+virtio1.rpmsg_ctrl.0.0
+virtio1.rpmsg_ns.53.53
+-- Zephyr shell over RPMsg: sending 'kernel version'
+kernel version
+Zephyr version 3.6.99
+[1;32mipc:~$ [m
+===== stop/start cycle x10 (T1.2)
+./phase1_load_ti.sh: line 44: echo: write error: Device or resource busy
+10/10 cycles reached running
+
+===== leave it stopped
+state=running

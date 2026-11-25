@@ -1,0 +1,85 @@
+##### r5capture-hb.elf
+name=79000000.r5f state=offline firmware=j722s-mcu-r5f0_0-fw
+state=running firmware=r5test-diag.elf
+[  186.513067] remoteproc remoteproc2: remote processor 79000000.r5f is now up
+[  186.524866] virtio_rpmsg_bus virtio1: creating channel rpmsg-tty addr 0x400
+[  186.526828] virtio_rpmsg_bus virtio1: creating channel rpmsg-client-sample addr 0x401
+[  186.527884] virtio_rpmsg_bus virtio1: creating channel rpmsg-tty addr 0x402
+Zephyr version 4.5.0
+### r5timer
+r5timer
+system timer @0x04800000 irq 28 (irq_is_enabled=1)
+  TIDR=0x50003900 TIOCP_CFG=0x00000008 TCLR=0x00000043
+  IRQSTATUS_RAW=0x00000000 IRQSTATUS=0x00000000 IRQENABLE=0x00000001
+  TCRR=0x098ad939 then 0x098b3b13 after 1 ms busy-wait (delta 25050)
+  TMAR=0x0991f0fc TLDR=0x00000000 TWPS=0x00000000 TSICR=0x00000004
+  uptime=6407 ms, kernel ticks=64077
+[1;32mipc:~$ [m
+### kernel uptime
+kernel uptime
+Uptime: 7911 ms
+[1;32mipc:~$ [m
+### r5cap
+r5cap
+r5capture heartbeat at 0xa1f00000: magic=0x54424835 counter=93 uptime=9329 ms
+[1;32mipc:~$ [m
+### r5timer
+r5timer
+system timer @0x04800000 irq 28 (irq_is_enabled=1)
+  TIDR=0x50003900 TIOCP_CFG=0x00000008 TCLR=0x00000043
+  IRQSTATUS_RAW=0x00000000 IRQSTATUS=0x00000000 IRQENABLE=0x00000001
+  TCRR=0x134dff01 then 0x134e60e7 after 1 ms busy-wait (delta 25062)
+  TMAR=0x135516b5 TLDR=0x00000000 TWPS=0x00000000 TSICR=0x00000004
+  uptime=12958 ms, kernel ticks=129588
+[1;32mipc:~$ [m
+### kernel thread list
+kernel thread list
+Scheduler: 232 since last call
+Threads:
+ 0xa120ea98           
+	options: 0x2, priority: -9 timeout: 0
+	state: pending, entry: 0xa1200621
+	stack size 1536, unused 832, usage 704 / 1536 (45 %)
+
+ 0xa120eba8           
+	options: 0x2, priority: -9 timeout: 0
+	state: pending, entry: 0xa1200525
+	stack size 1024, unused 696, usage 328 / 1024 (32 %)
+
+*0xa120f0a8 shell_rpmsg
+	options: 0x2, priority: 14 timeout: 0
+	state: queued, entry: 0xa1202955
+	stack size 2048, unused 984, usage 1064 / 2048 (51 %)
+
+ 0xa120ecb8           
+	options: 0x2, priority: -8 timeout: 0
+	state: pending, entry: 0xa1200811
+	stack size 1024, unused 600, usage 424 / 1024 (41 %)
+
+ 0xa120edc8 heartbeat_tid
+	options: 0x2, priority: 7 timeout: 599
+	state: sleeping, entry: 0xa1200a79
+	stack size 1024, unused 856, usage 168 / 1024 (16 %)
+
+ 0xa120eee8 shell_uart
+	options: 0x2, priority: 14 timeout: 0
+	state: pending, entry: 0xa1202955
+	stack size 2048, unused 1656, usage 392 / 2048 (19 %)
+
+ 0xa120f1b8 idle      
+	options: 0x3, priority: 15 timeout: 0
+	state: , entry: 0xa120a809
+	stack size 320, unused 184, usage 136 / 320 (42 %)
+
+[1;32mipc:~$ [m
+heartbeat at 0xA1F00000: magic=0x54424835 version=1
+  t=0 s: counter=156 uptime=15640 ms
+  t=2 s: counter=176 uptime=17644 ms
+counter moved by 20 in 2 s (expected about 20): PASS: the R5 is running our firmware
+== device tree nodes at 4800000
+== /proc/iomem
+(not claimed by a Linux driver)
+== timer interrupts in Linux
+ 11:       8754      11478      10130      13506     GICv3  30 Level     arch_timer
+ 12:          0          0          0          0     GICv3  27 Level     kvm guest vtimer
+IPI4:         0          0          0          0       Timer broadcast interrupts
