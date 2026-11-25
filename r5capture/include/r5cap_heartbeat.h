@@ -1,6 +1,6 @@
 // r5cap_heartbeat.h
 // Phase 1 "is the R5 running OUR code" check: the firmware writes this small
-// struct at the start of the r5capture shared region and updates it every
+// struct at the end of the r5capture shared region (R5CAP_HEARTBEAT_PHYS) and updates it every
 // R5CAP_HEARTBEAT_PERIOD_MS. Linux maps the same physical address and checks
 // that the counter moves. Phase 2 puts the capture ring in this region instead.
 //
@@ -16,6 +16,10 @@
 // shrinks its own DRAM so it never uses this range.
 #define R5CAP_SHM_PHYS 0xA1F00000u
 #define R5CAP_SHM_SIZE 0x00100000u
+
+// The heartbeat lives in the last 4 KB of the region; the capture ring
+// (r5cap_shared.h) starts at R5CAP_SHM_PHYS.
+#define R5CAP_HEARTBEAT_PHYS (R5CAP_SHM_PHYS + R5CAP_SHM_SIZE - 0x1000u)
 
 #define R5CAP_HEARTBEAT_MAGIC 0x54424835u   // "5HBT" in little-endian memory
 #define R5CAP_HEARTBEAT_VERSION 1u

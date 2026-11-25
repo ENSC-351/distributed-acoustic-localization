@@ -1,7 +1,7 @@
 // heartbeat.c
 // Writes struct r5cap_heartbeat (r5cap_heartbeat.h) into the shared region
 // every R5CAP_HEARTBEAT_PERIOD_MS, so Linux can see this firmware is running.
-// Also adds an "r5cap" command to the Zephyr shell over RPMsg (/dev/ttyRPMSG*).
+// Also adds an "r5hb" command to the Zephyr shell over RPMsg (/dev/ttyRPMSG*).
 //
 // Caching: the R5's data cache is OFF in this firmware (CONFIG_CACHE_MANAGEMENT
 // is not set, so the SoC boot code never enables it; see prj.conf for why it
@@ -26,7 +26,7 @@ BUILD_ASSERT(DT_REG_SIZE(SHM_NODE) == R5CAP_SHM_SIZE,
 #define HEARTBEAT_STACK_SIZE 1024
 #define HEARTBEAT_PRIORITY 7
 
-static struct r5cap_heartbeat *const heartbeat = (struct r5cap_heartbeat *)R5CAP_SHM_PHYS;
+static struct r5cap_heartbeat *const heartbeat = (struct r5cap_heartbeat *)R5CAP_HEARTBEAT_PHYS;
 
 // Make our writes visible to Linux, in order (see the caching note above)
 static void publish(void)
@@ -66,12 +66,12 @@ static int cmdStatus(const struct shell *sh, size_t argc, char **argv)
     (void)argc;
     (void)argv;
     shell_print(sh, "r5capture heartbeat at 0x%08x: magic=0x%08x counter=%u uptime=%u ms",
-                (unsigned int)R5CAP_SHM_PHYS, (unsigned int)heartbeat->magic,
+                (unsigned int)R5CAP_HEARTBEAT_PHYS, (unsigned int)heartbeat->magic,
                 (unsigned int)heartbeat->counter, (unsigned int)heartbeat->uptimeMs);
     return 0;
 }
 
-SHELL_CMD_REGISTER(r5cap, NULL, "Show r5capture heartbeat status", cmdStatus);
+SHELL_CMD_REGISTER(r5hb, NULL, "Show r5capture heartbeat status", cmdStatus);
 
 // ---- Debug: system timer (MCU_TIMER0) registers, read directly on the R5 ----
 // Offsets from zephyr/drivers/timer/ti_dmtimer.h. Used to find out why sleeps

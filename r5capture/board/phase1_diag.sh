@@ -11,7 +11,7 @@ ELF=${1:?usage: sudo ./phase1_diag.sh <firmware.elf>}
   echo "##### $ELF"
   NO_STOP=1 SRC=$PWD/$ELF FW=r5test-diag.elf ./phase1_load_ti.sh 2>&1 | grep -E 'state=|is now up|creating channel|Zephyr version|error|fail'
   sleep 2
-  ./r5shell.sh "r5timer" "kernel uptime" "r5cap"
+  ./r5shell.sh "r5timer" "kernel uptime" "r5hb"
   sleep 2
   ./r5shell.sh "r5timer" "kernel thread list"
   ./r5cap_hb_read 2

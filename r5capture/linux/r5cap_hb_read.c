@@ -10,7 +10,7 @@
 #include <time.h>
 #include <unistd.h>
 
-#define MAP_BYTES 4096
+#define MAP_BYTES 4096   // the heartbeat page (R5CAP_HEARTBEAT_PHYS is page-aligned)
 
 int main(int argc, char *argv[])
 {
@@ -25,15 +25,15 @@ int main(int argc, char *argv[])
         perror("open /dev/mem (run with sudo)");
         return 2;
     }
-    void *map = mmap(NULL, MAP_BYTES, PROT_READ, MAP_SHARED, fd, R5CAP_SHM_PHYS);
+    void *map = mmap(NULL, MAP_BYTES, PROT_READ, MAP_SHARED, fd, R5CAP_HEARTBEAT_PHYS);
     if (map == MAP_FAILED) {
-        perror("mmap 0xA1F00000");
+        perror("mmap heartbeat page");
         close(fd);
         return 2;
     }
     const volatile struct r5cap_heartbeat *hb = map;
 
-    printf("heartbeat at 0x%08X: magic=0x%08X version=%u\n", R5CAP_SHM_PHYS,
+    printf("heartbeat at 0x%08X: magic=0x%08X version=%u\n", R5CAP_HEARTBEAT_PHYS,
            (unsigned int)hb->magic, (unsigned int)hb->version);
     uint32_t counter1 = hb->counter;
     uint32_t uptime1 = hb->uptimeMs;
