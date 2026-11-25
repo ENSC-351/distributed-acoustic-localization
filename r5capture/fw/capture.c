@@ -195,6 +195,15 @@ void CAPTURE_tick(void)
     }
 }
 
+void CAPTURE_markLate(uint32_t missedFrames)
+{
+    if (!isRunning) {
+        return;
+    }
+    header->lateTicks += (missedFrames > 0) ? missedFrames : 1;
+    blockFlags |= R5CAP_BLOCK_LATE_TICK;
+}
+
 void CAPTURE_stop(void)
 {
     isRunning = false;

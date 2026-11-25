@@ -202,6 +202,23 @@ static void testAdcErrorsAreFlagged(void)
     CHECK(slotMatchesSignal(2));
 }
 
+// The frame loop can report schedule slips that CAPTURE_tick() can't see
+static void testMarkLate(void)
+{
+    struct CaptureConfig config = defaultConfig();
+    startCapture(&config);
+    runTicks(config.blockFrames);       // block 0: clean
+    runTicks(3);                        // block 1, frames 0-2
+    CAPTURE_markLate(0);                // started late, nothing missed
+    CAPTURE_markLate(2);                // missed 2 frame slots
+    runTicks(config.blockFrames - 3);   // rest of block 1
+    runTicks(config.blockFrames);       // block 2: clean
+    CHECK(header()->lateTicks == 3);
+    CHECK(r5cap_meta(region, 0)->flags == 0);
+    CHECK(r5cap_meta(region, 1)->flags == R5CAP_BLOCK_LATE_TICK);
+    CHECK(r5cap_meta(region, 2)->flags == 0);
+}
+
 static void testStop(void)
 {
     struct CaptureConfig config = defaultConfig();
@@ -223,6 +240,7 @@ int main(void)
     testPartialBlockIsNotPublished();
     testLateTicks();
     testAdcErrorsAreFlagged();
+    testMarkLate();
     testStop();
     return TEST_finish("test_capture");
 }

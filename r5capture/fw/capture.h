@@ -37,6 +37,13 @@ bool CAPTURE_init(void *region, size_t regionSize, const struct CaptureConfig *c
 // Converts one frame (every channel once). Call once per frame period.
 void CAPTURE_tick(void);
 
+// The frame loop reports that this frame started too late against its schedule
+// (it missed `missedFrames` frame slots; 0 = started late but missed none). Counts
+// them in lateTicks and flags the current block. Needed because CAPTURE_tick() only
+// compares a tick with the previous one, so a loop that is steadily slightly too
+// slow (overload) would otherwise drop frames without anyone noticing.
+void CAPTURE_markLate(uint32_t missedFrames);
+
 // Marks the capture stopped; ticks after this do nothing.
 void CAPTURE_stop(void);
 

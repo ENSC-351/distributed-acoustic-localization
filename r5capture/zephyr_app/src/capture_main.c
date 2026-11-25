@@ -179,14 +179,18 @@ static void captureThread(void *unused1, void *unused2, void *unused3)
         for (;;) {
             next += period;
             uint64_t now = R5HAL_nowTicks();
+            uint32_t missed = 0;
             if (now > next + period) {
-                next = now;   // fell behind: skip the missed frames (capture.c flags them)
+                missed = (uint32_t)((now - next) / period);   // whole frame slots lost
+                next += (uint64_t)missed * period;            // skip them, keep the schedule
             }
             while (now < next) {
                 now = R5HAL_nowTicks();
             }
             uint32_t overshoot = (uint32_t)(now - next);   // how late this frame starts
-            if (overshoot > lateThreshold) {
+            if (overshoot > lateThreshold || missed > 0) {
+                CAPTURE_markLate(missed);   // slips against the schedule count as late
+
                 uint32_t i = diag->eventCount;
                 diag->eventTick[i % R5CAP_DIAG_EVENTS] = (uint32_t)now;
                 diag->eventOvershoot[i % R5CAP_DIAG_EVENTS] = overshoot;
