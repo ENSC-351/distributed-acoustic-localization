@@ -32,6 +32,7 @@
 #include "r5cap_control.h"
 #include "r5cap_heartbeat.h"
 #include <zephyr/sys/barrier.h>
+#include <zephyr/init.h>
 #include <zephyr/irq.h>
 #include <zephyr/kernel.h>
 #include <zephyr/shell/shell.h>
@@ -258,8 +259,23 @@ static void captureThread(void *unused1, void *unused2, void *unused3)
     }
 }
 
-K_THREAD_DEFINE(capture_tid, CAPTURE_STACK_SIZE, captureThread, NULL, NULL, NULL,
-                CAPTURE_PRIORITY, 0, 0);
+// The capture thread's stack goes in the same fast memory as its variables
+// (R5CAP_FAST_DATA: ATCM on the R5): every call in the hot loop pushes and pops
+// registers, and in uncached DRAM each of those accesses costs ~150 ns.
+Z_KERNEL_STACK_DEFINE_IN(captureStack, CAPTURE_STACK_SIZE, R5CAP_FAST_DATA);
+static struct k_thread captureThreadData;
+
+static int startCaptureThread(void)
+{
+    k_tid_t tid = k_thread_create(&captureThreadData, captureStack,
+                                  K_KERNEL_STACK_SIZEOF(captureStack), captureThread, NULL, NULL,
+                                  NULL, CAPTURE_PRIORITY, 0, K_NO_WAIT);
+    k_thread_name_set(tid, "capture");
+    return 0;
+}
+
+// After the kernel is up (APPLICATION level); runs once the scheduler starts
+SYS_INIT(startCaptureThread, APPLICATION, 99);
 
 static int cmdStart(const struct shell *sh, size_t argc, char **argv)
 {

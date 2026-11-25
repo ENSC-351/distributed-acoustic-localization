@@ -9,7 +9,7 @@ ELF=${ELF:-r5capture-mcspi.elf}           # firmware to test (e.g. ELF=r5capture
 FWNAME=r5test-${ELF#r5capture-}
 [ "$(id -u)" = 0 ] || { echo "run with sudo"; exit 1; }
 CLOCKS=${CLOCKS:-"1250000"}
-RATES=${RATES:-"16000 18000 19000 20000 21000 22000 23000"}
+RATES=${RATES:-"20000 21000 22000 23000 24000 25000"}
 MODES=${MODES:-"irqoff"}   # interrupts on: a 50 Hz interrupt makes frames late (measured)
 SETTLE_S=1
 MEASURE_S=3
