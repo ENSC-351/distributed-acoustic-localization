@@ -131,3 +131,12 @@ Start with `docs/test-r5-adc-joey.md` (test steps) and `docs/study/` (background
 - Profile (`r5cap_ctl start <rate> <spi> irqoff profile`, then `diag`): at 16k, bit shifting ~34 us,
   SPI register work ~7.8 us, bookkeeping ~15.7 us per frame (probe-inflated). Next: capture thread
   stack into ATCM (stack is still uncached DRAM), then two conversions per McSPI FIFO burst.
+
+### Update (2026-11-25, later): 24,000 frames/s clean; sampler frozen
+- Capture thread stack moved into ATCM too (`Z_KERNEL_STACK_DEFINE_IN(..., R5CAP_FAST_DATA)`):
+  bookkeeping 15.7 -> 9.4 us/frame, **clean rate 20,000 -> 24,000 frames/s per mic** (0 late, worst
+  frame start 12.0 us; 25,000 over the edge). Results: `docs/results/{profile,sweep}_atcm_stack.txt`.
+- Decision: stop optimizing the sampler. Remaining overhead (~6 us SPI register work/frame) is worth
+  ~10 %, the ADC limit is ~31k, and rate is no longer the main accuracy lever.
+- Next: validate on real taps, CH0/CH1 mismatch, anti-aliasing filter, R5 as an AudioCapture backend
+  (including R5 timer -> CLOCK_REALTIME for t_event_ns).
