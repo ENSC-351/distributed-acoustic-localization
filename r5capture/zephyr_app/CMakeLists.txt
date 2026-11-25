@@ -15,12 +15,14 @@ target_include_directories(app PRIVATE ${LIBMETAL_INCLUDE_DIR} ${OPENAMP_INCLUDE
 # SPI to the MCP3208: "mcspi" (hardware MCU_SPI0, default) or "gpio" (bit-banged)
 set(R5CAP_SPI mcspi CACHE STRING "SPI implementation: mcspi or gpio")
 target_sources(app PRIVATE src/main_remote.c src/heartbeat.c src/timer_fix.c
-                           src/hal_r5_timer.c src/hal_r5_${R5CAP_SPI}.c src/capture_main.c src/icache.c
+                           src/hal_r5_timer.c src/hal_r5_${R5CAP_SPI}.c src/capture_main.c src/icache.c src/fastmem.c
                            ${CMAKE_CURRENT_SOURCE_DIR}/../fw/capture.c
                            ${CMAKE_CURRENT_SOURCE_DIR}/../fw/mcp3208.c)
 target_include_directories(app PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../include ${CMAKE_CURRENT_SOURCE_DIR}/../fw)
 # The bit-banged build can start sampling on its own (no peripheral to power);
 # the McSPI build waits for "r5cap start" after the board script checks MCU_SPI0.
+# Hot variables in the BTCM (fw/r5cap_fastmem.h)
+target_compile_definitions(app PRIVATE R5CAP_USE_BTCM=1)
 if(R5CAP_SPI STREQUAL "gpio")
   target_compile_definitions(app PRIVATE AUTOSTART_RATE_HZ=4000)
 endif()

@@ -7,7 +7,7 @@
 cd "$(dirname "$0")"
 [ "$(id -u)" = 0 ] || { echo "run with sudo"; exit 1; }
 CLOCKS=${CLOCKS:-"1250000"}
-RATES=${RATES:-"14000 15000 16000 17000 18000 19000"}
+RATES=${RATES:-"16000 18000 19000 20000 21000 22000 23000"}
 MODES=${MODES:-"irqoff"}   # interrupts on: a 50 Hz interrupt makes frames late (measured)
 SETTLE_S=1
 MEASURE_S=3

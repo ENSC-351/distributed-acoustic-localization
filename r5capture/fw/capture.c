@@ -3,6 +3,7 @@
 #include "capture.h"
 #include "mcp3208.h"
 #include "r5_hal.h"
+#include "r5cap_fastmem.h"
 #include <string.h>
 
 // A tick is late if more than 1.5 frame periods passed since the previous one
@@ -11,19 +12,19 @@
 #define MIN_RING_BLOCKS 2
 #define REGION_ALIGNMENT 8
 
-static void *region = NULL;
-static struct r5cap_header *header = NULL;
-static struct CaptureConfig config;
-static bool isRunning = false;
+static R5CAP_FAST_DATA void *region = NULL;
+static R5CAP_FAST_DATA struct r5cap_header *header = NULL;
+static R5CAP_FAST_DATA struct CaptureConfig config;
+static R5CAP_FAST_DATA bool isRunning = false;
 
-static uint32_t blockNumber = 0;     // block being filled
-static uint32_t frameInBlock = 0;    // next frame to fill in that block
-static uint64_t blockFirstTick = 0;  // when that block's frame 0 started
-static uint32_t blockFlags = 0;      // R5CAP_BLOCK_* for that block
-static uint16_t *blockSamples = NULL;  // samples of that block's slot (found once per block,
+static R5CAP_FAST_DATA uint32_t blockNumber = 0;     // block being filled
+static R5CAP_FAST_DATA uint32_t frameInBlock = 0;    // next frame to fill in that block
+static R5CAP_FAST_DATA uint64_t blockFirstTick = 0;  // when that block's frame 0 started
+static R5CAP_FAST_DATA uint32_t blockFlags = 0;      // R5CAP_BLOCK_* for that block
+static R5CAP_FAST_DATA uint16_t *blockSamples = NULL;  // samples of that block's slot (found once per block,
                                        // not per frame: the header is in uncached shared memory)
-static bool hasPreviousTick = false;
-static uint64_t previousTickStart = 0;
+static R5CAP_FAST_DATA bool hasPreviousTick = false;
+static R5CAP_FAST_DATA uint64_t previousTickStart = 0;
 
 static bool isPowerOfTwo(uint32_t x)
 {

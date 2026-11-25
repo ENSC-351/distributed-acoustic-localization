@@ -28,6 +28,7 @@
 #include "hal_r5_spi.h"
 #include "mcp3208.h"
 #include "r5_hal.h"
+#include "r5cap_fastmem.h"
 #include "r5cap_control.h"
 #include "r5cap_heartbeat.h"
 #include <zephyr/sys/barrier.h>
@@ -82,8 +83,8 @@ static void pauseBackgroundWork(bool pause)
 // ---- Control from Linux through shared memory (r5cap_control.h) ----
 static volatile struct r5cap_control *const control = (struct r5cap_control *)R5CAP_CONTROL_PHYS;
 static volatile struct r5cap_diag *const diag = (struct r5cap_diag *)R5CAP_DIAG_PHYS;
-static uint32_t controlSeqSeen = 0;
-static uint32_t captureFlags = 0;   // R5CAP_CTL_* in effect
+static R5CAP_FAST_DATA uint32_t controlSeqSeen = 0;
+static R5CAP_FAST_DATA uint32_t captureFlags = 0;   // R5CAP_CTL_* in effect
 
 static void controlInit(void)
 {

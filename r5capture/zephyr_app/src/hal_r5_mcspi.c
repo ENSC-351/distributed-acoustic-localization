@@ -18,6 +18,7 @@
 // Register map and bit fields: Zephyr's drivers/spi/spi_omap_mcspi.c.
 #include "hal_r5_spi.h"
 #include "r5_hal.h"
+#include "r5cap_fastmem.h"
 #include <zephyr/arch/cpu.h>
 #include <zephyr/sys/sys_io.h>
 #include <zephyr/sys/util.h>
@@ -68,13 +69,13 @@
 #define MAX_RATIO 4096u
 #define RESET_WAIT_LOOPS 100000
 
-volatile bool r5spiProfileOn = false;
-uint32_t r5spiProfileTicks = 0;
-uint32_t r5spiProfileShiftTicks = 0;
+R5CAP_FAST_DATA volatile bool r5spiProfileOn = false;
+R5CAP_FAST_DATA uint32_t r5spiProfileTicks = 0;
+R5CAP_FAST_DATA uint32_t r5spiProfileShiftTicks = 0;
 
-static bool isReady = false;
-static uint32_t chconf = 0;   // CH0CONF without FORCE (kept here to avoid read-modify-write)
-static uint32_t clockHz = 0;
+static R5CAP_FAST_DATA bool isReady = false;
+static R5CAP_FAST_DATA uint32_t chconf = 0;   // CH0CONF without FORCE (kept here to avoid read-modify-write)
+static R5CAP_FAST_DATA uint32_t clockHz = 0;
 
 const char *R5SPI_name(void)
 {
