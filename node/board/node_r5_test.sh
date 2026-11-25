@@ -14,7 +14,8 @@ TEST=${1:-silence}
 SECS=${2:-60}
 PORT=47351
 export DSP_MIC_SPACING_M=${DSP_MIC_SPACING_M:-0.20}
-LOG=node_${TEST}_$(date +%H%M%S)
+# Logs go to /tmp: root can't write to the NFS share (root_squash). Copy them off afterwards.
+LOG=${LOGDIR:-/tmp}/node_${TEST}_$(date +%H%M%S)
 
 ./master $PORT > $LOG.master.txt 2>&1 &
 MASTER=$!
@@ -36,4 +37,4 @@ esac
 sleep 1
 kill -INT $MASTER 2>/dev/null; wait $MASTER 2>/dev/null
 echo "== master saw:"; grep -E 'event|connected' $LOG.master.txt | tail -40
-echo "== logs: $LOG.*.txt (copy them off the board: they are the results)"
+echo "== logs: $LOG.*.txt  (as yourself: cp $LOG.* /mnt/remote/myApps/integration/)"
