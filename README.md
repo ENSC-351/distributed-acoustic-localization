@@ -7,6 +7,8 @@ Several BeagleY-AI "nodes" each estimate the direction of a sound and report it 
 
 - `node/`: the executable that runs on each node board
 - `master/`: the executable that runs on the master board
+- `common/`: code shared by node and master (wire protocol)
+- `dsp/`: TDOA / direction estimator library and its host tests (see `dsp/README.md`)
 
 ## Building
 
