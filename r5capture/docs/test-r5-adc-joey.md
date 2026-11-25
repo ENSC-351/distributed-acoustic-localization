@@ -9,16 +9,19 @@ Branch `madden/r5-capture`. Everything you need to run is prebuilt in
   conversion, frames paced by the R5's 25 MHz timer, samples into the shared ring, read
   by Linux. 0 ADC errors, 0 ring errors. Controlled from Linux through shared memory
   (`r5cap_ctl`), so the R5's shell isn't needed while sampling.
-- **Best clean setting: 16,000 frames/s per mic, SPI ~1.23 MHz, interrupts off**
-  (`sudo ./r5cap_ctl start 16000 1250000 irqoff`): 0 late frames, worst frame start
-  3.2 µs off schedule. 18,000 also passes with less slack.
+- **Best clean setting: 20,000 frames/s per mic, SPI ~1.23 MHz, interrupts off**
+  (`sudo ./r5cap_ctl start 20000 1250000 irqoff`): 0 late frames, worst frame start
+  13.6 µs off schedule (half a period is 25 µs). 21,000 is over the edge. This needs the
+  per-frame variables in the R5's ATCM (default build); with them in DRAM it was 16,000.
 - **Use `irqoff`.** With interrupts on, a 50 Hz interrupt on the R5 makes a frame late
   every 20.0 ms (~32-42 µs). Measured with `r5cap_ctl diag`.
-- **Ceiling ~18,900 frames/s**, set by the R5's own code speed (frame ~53 µs, of which
+- **Ceiling ~20,500 frames/s**, set by the R5's own code speed (frame ~49 µs, of which
   SPI shifting ~31 µs). Asking for more doesn't go faster. Older builds reported 0 late
   frames there anyway; the current build counts slips against the schedule, and the
   sweep checks delivered blocks/s, so it won't happen again.
-- Reference clock is 48 MHz; the R5's instruction cache is on (data cache off).
+- Reference clock is 48 MHz; the R5's instruction cache is on (data cache off); per-frame
+  variables live in the ATCM at 0x1000 (the BTCM at 0x41010000 isn't reachable from this core:
+  reading it gave a synchronous external abort, caught by the crash recorder, `r5cap_ctl crash`).
 - Not yet done: the analysis of a real tap recording through the R5 (that's Test B).
 
 ## Before you start
@@ -53,7 +56,7 @@ with zero late frames. Send back `mcspi.txt`.
 Set the R5 to the best clean setting, then tap the table ~20 cm from the mic about once
 a second (or drop a marble a few times) during each recording:
 ```
-sudo ./r5cap_ctl start 16000 1250000 irqoff               # don't trust a rate above ~18,000
+sudo ./r5cap_ctl start 20000 1250000 irqoff               # don't trust a rate above ~20,000
 sudo ./r5cap_ring_read 10 > r5taps.wav 2> r5taps.txt      # through the R5
 sudo ./r5cap_ctl stop                                       # free MCU_SPI0 for Linux
 sudo ADC_SPI_DEVICE=/dev/spidevX.0 ./adc_record 10 > linuxtaps.wav 2> linuxtaps.txt
@@ -70,7 +73,7 @@ mic spacing it allows, c/(2f)) and the CH0/CH1 delay, which must equal the measu
 
 ```
 sudo ./r5cap_ctl status                  # what's running + ring counters
-sudo ./r5cap_ctl start 16000 1250000 irqoff   # rate (frames/s per mic), SPI clock (Hz), interrupts off
+sudo ./r5cap_ctl start 20000 1250000 irqoff   # rate (frames/s per mic), SPI clock (Hz), interrupts off
 sudo ./r5cap_ctl diag                    # late frames while sampling: count, worst, time between
 sudo ./r5cap_ctl stop
 sudo ./r5shell.sh "r5cap stats" "r5cap spitest"   # R5 shell: only while sampling is stopped

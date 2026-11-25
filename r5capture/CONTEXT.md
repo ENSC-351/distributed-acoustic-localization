@@ -122,3 +122,12 @@ Start with `docs/test-r5-adc-joey.md` (test steps) and `docs/study/` (background
 - Open: tap recording through the R5 not analyzed yet; CH0 ~1,890 vs CH1 ~2,360 on Madden's
   board with the same signal supposedly on both; the identity of the 50 Hz interrupt; the
   `Deferred event dump` dmesg lines; one unexplained full-board freeze during an R5 load.
+
+### Update (2026-11-25, evening): 20,000 frames/s clean
+- Per-frame variables moved to the ATCM (`.r5fast` at 0x1000, `zephyr_app/r5fast.ld`, default on):
+  **clean rate 16,000 -> 20,000 frames/s per mic** (0 late, worst frame start 13.6 us). Ceiling ~20,500.
+- BTCM at 0x41010000 is NOT accessible from the MCU R5F (synchronous external abort); found with the
+  new crash recorder (`zephyr_app/src/fatal.c`, `r5cap_ctl crash`).
+- Profile (`r5cap_ctl start <rate> <spi> irqoff profile`, then `diag`): at 16k, bit shifting ~34 us,
+  SPI register work ~7.8 us, bookkeeping ~15.7 us per frame (probe-inflated). Next: capture thread
+  stack into ATCM (stack is still uncached DRAM), then two conversions per McSPI FIFO burst.
