@@ -3,8 +3,21 @@
  * @brief Samples the microphones as fast as the ADC allows and hands out the
  *        raw samples in timestamped blocks, for signal analysis.
  *
- * This is the Linux reserved-core version (see audio/CONTEXT.md). It needs
- * hardware SPI and a CPU core reserved with isolcpus= (see overlays/README.md).
+ * Two backends with the same API (AudioCapture_Config.backend):
+ *   - R5: the MCU R5F core samples the ADC and Linux reads its shared-memory
+ *     ring (r5capture/SAMPLING_CONTEXT.md). Start the firmware first
+ *     (r5capture/board/r5_start.sh). Needs root (/dev/mem). The R5 sets the
+ *     channels, block size and rate; the matching config fields are ignored.
+ *   - LINUX: the reserved-core sampler (see audio/CONTEXT.md). Needs hardware
+ *     SPI and a CPU core reserved with isolcpus= (see overlays/README.md).
+ * AUTO (the default) uses the R5 if its ring is running, otherwise LINUX.
+ * The Linux sampler is never started while the R5 is sampling (both would
+ * drive the same SPI controller).
+ *
+ * The description below is for the Linux backend; with the R5 the frame timing
+ * comes from the R5's hardware timer instead, there are no gaps between blocks
+ * (gapBeforeNs is 0 unless blocks were skipped), channel offsets are measured
+ * by the firmware, and tFirstNs is converted from R5 timer ticks.
  *
  * One background thread reads each block of samples in a single SPI message,
  * so the SPI hardware, not software timing, sets the spacing between samples.
@@ -68,6 +81,12 @@
 // Fewest frames per block (needed to measure the sample rate)
 #define AUDIO_CAPTURE_MIN_BLOCK_FRAMES 8
 
+typedef enum {
+    AUDIO_CAPTURE_BACKEND_AUTO = 0,  // R5 if its ring is running, else LINUX
+    AUDIO_CAPTURE_BACKEND_LINUX,     // reserved-core Linux sampler
+    AUDIO_CAPTURE_BACKEND_R5,        // MCU R5F firmware (r5capture/)
+} AudioCapture_Backend;
+
 typedef struct {
     int numChannels;                                // Microphones to sample (1 to AUDIO_CAPTURE_MAX_CHANNELS)
     uint8_t channels[AUDIO_CAPTURE_MAX_CHANNELS];   // ADC channel of each microphone, in frame order
@@ -75,6 +94,7 @@ typedef struct {
                                                     //   may not exceed ADC_MAX_CONVERSIONS_PER_READ.
     uint32_t spiSpeedHz;                            // SPI clock; sets the sample rate. See ADC_DEFAULT_SPI_SPEED_HZ.
     int ringBlocks;                                 // Blocks kept in memory; a reader further behind than this loses data
+    AudioCapture_Backend backend;                   // Which sampler (0 = AUTO)
 } AudioCapture_Config;
 
 typedef struct {
@@ -138,6 +158,9 @@ double AudioCapture_getChannelOffsetNs(int mic);   // How long after mic 0 this 
 int AudioCapture_getNumChannels(void);
 int AudioCapture_getBlockFrames(void);
 uint32_t AudioCapture_getSpiSpeedHz(void);
+
+// The backend actually in use (never AUTO while running)
+AudioCapture_Backend AudioCapture_getBackend(void);
 
 // The CPU core (reserved with the isolcpus= boot argument) that sampling runs
 // on, or AUDIO_CAPTURE_NO_CPU before capture has started.

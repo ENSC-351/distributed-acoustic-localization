@@ -6,6 +6,13 @@ Samples the node's two microphones through the MCP3208 ADC as fast as the
 hardware allows, and hands the raw samples to any code that needs them
 (localization, level meter, recording).
 
+**Two samplers behind one API.** `AudioCapture_init()` uses the R5 sampler
+(`r5capture/`) when its firmware is running (start it with
+`r5capture/board/r5_start.sh`; needs root), otherwise the Linux reserved-core
+sampler. Force one with `config.backend` (`AUDIO_CAPTURE_BACKEND_R5` or
+`_LINUX`); `AudioCapture_getBackend()` says which is running. Tests for the R5
+backend (fake ring and timer, no board needed): `audio/tests/`.
+
 | Module | Header | Purpose |
 |---|---|---|
 | Audio capture | `audio/audio_capture.h` | Samples ADC channels 0 and 1 into timestamped, evenly spaced blocks. **Use this for signal analysis.** |

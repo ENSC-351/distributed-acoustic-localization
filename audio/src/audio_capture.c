@@ -1,8 +1,11 @@
-// Linux reserved-core sampler: see audio/CONTEXT.md
+// AudioCapture: the Linux reserved-core sampler (see audio/CONTEXT.md), and
+// the dispatch to the R5 backend (audio_capture_r5.c). While the R5 backend
+// is active, every public function forwards to it.
 
 // For pinning the sampling thread to a CPU core
 #define _GNU_SOURCE
 #include "audio/audio_capture.h"
+#include "audio_capture_r5.h"
 #include "hal/adc.h"
 #include <errno.h>
 #include <pthread.h>
@@ -53,6 +56,7 @@ struct AudioCapture_Reader {
 };
 
 static AudioCapture_Config config;
+static bool r5Active = false;   // the R5 backend is running
 static double framePeriodNs = 0.0;
 static double callOverheadNs = 0.0;
 static bool isRunning = false;
@@ -354,12 +358,30 @@ bool AudioCapture_init(const AudioCapture_Config *userConfig)
 {
     pthread_once(&condOnce, initCondition);
 
-    if (isRunning) {
+    if (isRunning || r5Active) {
         fprintf(stderr, "AudioCapture: already initialized\n");
         return false;
     }
 
     AudioCapture_Config newConfig = userConfig ? *userConfig : AudioCapture_defaultConfig();
+
+    // The R5 backend: explicitly, or AUTO when the R5 is sampling. Never fall
+    // back to the Linux sampler while the R5 is sampling (same SPI controller).
+    bool useR5 = newConfig.backend == AUDIO_CAPTURE_BACKEND_R5 ||
+                 (newConfig.backend == AUDIO_CAPTURE_BACKEND_AUTO && AudioCaptureR5_isSampling());
+    if (useR5) {
+        r5Active = AudioCaptureR5_init();
+        if (r5Active) {
+            fprintf(stderr, "AudioCapture: using the R5 sampler (%d channels, %.1f frames/s, %s clock)\n",
+                    AudioCaptureR5_getNumChannels(), 1e9 / AudioCaptureR5_getFramePeriodNs(),
+                    AudioCaptureR5_hasTimerClock() ? "timer" : "arrival-time");
+        }
+        return r5Active;
+    }
+    if (newConfig.backend != AUDIO_CAPTURE_BACKEND_AUTO && newConfig.backend != AUDIO_CAPTURE_BACKEND_LINUX) {
+        fprintf(stderr, "AudioCapture: unknown backend %d\n", (int)newConfig.backend);
+        return false;
+    }
     if (!isValidConfig(&newConfig)) {
         fprintf(stderr, "AudioCapture: invalid configuration\n");
         return false;
@@ -436,6 +458,11 @@ bool AudioCapture_init(const AudioCapture_Config *userConfig)
 
 void AudioCapture_cleanup(void)
 {
+    if (r5Active) {
+        AudioCaptureR5_cleanup();
+        r5Active = false;
+        return;
+    }
     if (!isRunning) {
         return;
     }
@@ -458,10 +485,18 @@ void AudioCapture_cleanup(void)
 
 double AudioCapture_getFramePeriodNs(void)
 {
+    if (r5Active) {
+        return AudioCaptureR5_getFramePeriodNs();
+    }
     pthread_mutex_lock(&ringMutex);
     double value = averagePeriodNs;
     pthread_mutex_unlock(&ringMutex);
     return value;
+}
+
+AudioCapture_Backend AudioCapture_getBackend(void)
+{
+    return r5Active ? AUDIO_CAPTURE_BACKEND_R5 : AUDIO_CAPTURE_BACKEND_LINUX;
 }
 
 double AudioCapture_getSampleRateHz(void)
@@ -472,6 +507,9 @@ double AudioCapture_getSampleRateHz(void)
 
 double AudioCapture_getChannelOffsetNs(int mic)
 {
+    if (r5Active) {
+        return AudioCaptureR5_getChannelOffsetNs(mic);
+    }
     if (mic < 0 || mic >= config.numChannels) {
         return 0.0;
     }
@@ -480,26 +518,42 @@ double AudioCapture_getChannelOffsetNs(int mic)
 
 int AudioCapture_getNumChannels(void)
 {
+    if (r5Active) {
+        return AudioCaptureR5_getNumChannels();
+    }
     return config.numChannels;
 }
 
 int AudioCapture_getBlockFrames(void)
 {
+    if (r5Active) {
+        return AudioCaptureR5_getBlockFrames();
+    }
     return config.blockFrames;
 }
 
 int AudioCapture_getReservedCpu(void)
 {
+    if (r5Active) {
+        return AUDIO_CAPTURE_NO_CPU;
+    }
     return reservedCpu;
 }
 
 uint32_t AudioCapture_getSpiSpeedHz(void)
 {
+    if (r5Active) {
+        return AudioCaptureR5_getSpiSpeedHz();
+    }
     return config.spiSpeedHz;
 }
 
 void AudioCapture_getStats(AudioCapture_Stats *stats)
 {
+    if (r5Active) {
+        AudioCaptureR5_getStats(stats);
+        return;
+    }
     if (stats == NULL) {
         return;
     }
@@ -510,6 +564,9 @@ void AudioCapture_getStats(AudioCapture_Stats *stats)
 
 AudioCapture_Reader *AudioCapture_openReader(void)
 {
+    if (r5Active) {
+        return AudioCaptureR5_openReader();
+    }
     AudioCapture_Reader *reader = malloc(sizeof(*reader));
     if (reader == NULL) {
         return NULL;
@@ -531,12 +588,19 @@ AudioCapture_Reader *AudioCapture_openReader(void)
 
 void AudioCapture_closeReader(AudioCapture_Reader *reader)
 {
+    if (r5Active) {
+        AudioCaptureR5_closeReader(reader);
+        return;
+    }
     free(reader);
 }
 
 AudioCapture_Result AudioCapture_readBlock(AudioCapture_Reader *reader, uint16_t *samples,
                                            AudioCapture_BlockInfo *info, int timeoutMs)
 {
+    if (r5Active) {
+        return AudioCaptureR5_readBlock(reader, samples, info, timeoutMs);
+    }
     if (reader == NULL || samples == NULL || info == NULL) {
         return AUDIO_CAPTURE_STOPPED;
     }
