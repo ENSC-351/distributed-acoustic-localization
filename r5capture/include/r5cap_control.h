@@ -6,7 +6,7 @@
 // Lives in the heartbeat page (last 4 KB of the r5capture region).
 // Protocol:
 //   R5 at boot:  clear everything, barrier, magic = R5CAP_CONTROL_MAGIC
-//   Linux:       wait for magic; write rateHz, spiHz; barrier; seq = seq + 1
+//   Linux:       wait for magic; write rateHz, spiHz, flags; barrier; seq = seq + 1
 //   R5:          notices seq changed (once per block while sampling, every 10 ms
 //                when idle); stops, applies the clock (if spiHz != 0), starts at
 //                rateHz (0 = stay stopped); writes ackSpiHz; barrier; ackSeq = seq
@@ -28,6 +28,23 @@ struct r5cap_control {
     volatile uint32_t ackSeq;     // R5: seq of the last command applied
     volatile uint32_t ackSpiHz;   // R5: SPI clock actually set (divider result)
     volatile uint32_t ackRateHz;  // R5: rate now running (0 = stopped)
+    volatile uint32_t flags;      // Linux: R5CAP_CTL_* for the next start
+    volatile uint32_t ackFlags;   // R5: flags now in effect
+};
+
+#define R5CAP_CTL_IRQ_LOCK (1u << 0)   // interrupts off on the R5 while sampling
+
+// Diagnostics written by the R5 while sampling (reset at each start): how late the
+// frame loop gets, and when, to find what delays it.
+#define R5CAP_DIAG_PHYS (R5CAP_CONTROL_PHYS + 0x100u)
+#define R5CAP_DIAG_EVENTS 32
+
+struct r5cap_diag {
+    volatile uint32_t lateEvents;          // frames that started > half a period late
+    volatile uint32_t maxOvershootTicks;   // worst lateness of a frame start, in timer ticks
+    volatile uint32_t eventCount;          // events recorded so far (ring index = count % EVENTS)
+    volatile uint32_t eventTick[R5CAP_DIAG_EVENTS];      // low 32 bits of the timer at the event
+    volatile uint32_t eventOvershoot[R5CAP_DIAG_EVENTS]; // how late, in ticks
 };
 
 #endif

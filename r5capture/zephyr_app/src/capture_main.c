@@ -31,6 +31,7 @@
 #include "r5cap_control.h"
 #include "r5cap_heartbeat.h"
 #include <zephyr/sys/barrier.h>
+#include <zephyr/irq.h>
 #include <zephyr/kernel.h>
 #include <zephyr/shell/shell.h>
 #include <zephyr/sys/atomic.h>
@@ -80,7 +81,9 @@ static void pauseBackgroundWork(bool pause)
 
 // ---- Control from Linux through shared memory (r5cap_control.h) ----
 static volatile struct r5cap_control *const control = (struct r5cap_control *)R5CAP_CONTROL_PHYS;
+static volatile struct r5cap_diag *const diag = (struct r5cap_diag *)R5CAP_DIAG_PHYS;
 static uint32_t controlSeqSeen = 0;
+static uint32_t captureFlags = 0;   // R5CAP_CTL_* in effect
 
 static void controlInit(void)
 {
@@ -91,6 +94,8 @@ static void controlInit(void)
     control->ackSeq = 0;
     control->ackSpiHz = 0;
     control->ackRateHz = 0;
+    control->flags = 0;
+    control->ackFlags = 0;
     controlSeqSeen = 0;
     barrier_dmem_fence_full();
     control->magic = R5CAP_CONTROL_MAGIC;
@@ -108,6 +113,7 @@ static void controlApply(void)
     barrier_dmem_fence_full();   // read the command after seeing the new seq
     uint32_t rate = control->rateHz;
     uint32_t spi = control->spiHz;
+    captureFlags = control->flags;
     if (spi != 0) {
         uint32_t actual = R5SPI_setClockHz(spi);
         if (actual != 0) {
@@ -117,6 +123,7 @@ static void controlApply(void)
     atomic_set(&requestedRate, (rate <= MAX_RATE_HZ) ? (atomic_val_t)rate : 0);
     control->ackSpiHz = spiClockHz;
     control->ackRateHz = (uint32_t)atomic_get(&requestedRate);
+    control->ackFlags = captureFlags;
     controlSeqSeen = seq;
     barrier_dmem_fence_full();
     control->ackSeq = seq;
@@ -153,6 +160,18 @@ static void captureThread(void *unused1, void *unused2, void *unused3)
         atomic_set(&capturing, 1);
         pauseBackgroundWork(true);
 
+        // Diagnostics: reset for this run
+        diag->lateEvents = 0;
+        diag->maxOvershootTicks = 0;
+        diag->eventCount = 0;
+        const uint32_t lateThreshold = period / 2;
+        uint32_t maxOvershoot = 0;
+
+        // Optional: no interrupts while sampling. Control is polled from shared
+        // memory, so nothing here needs one; RPMsg etc. wait until capture stops.
+        const bool lockIrqs = (captureFlags & R5CAP_CTL_IRQ_LOCK) != 0;
+        unsigned int irqKey = lockIrqs ? irq_lock() : 0;
+
         // Hot loop: nothing but waiting for the next frame and sampling it.
         // Commands (shared memory or shell) are checked once per block only.
         uint64_t next = R5HAL_nowTicks();
@@ -166,13 +185,28 @@ static void captureThread(void *unused1, void *unused2, void *unused3)
             while (now < next) {
                 now = R5HAL_nowTicks();
             }
+            uint32_t overshoot = (uint32_t)(now - next);   // how late this frame starts
+            if (overshoot > lateThreshold) {
+                uint32_t i = diag->eventCount;
+                diag->eventTick[i % R5CAP_DIAG_EVENTS] = (uint32_t)now;
+                diag->eventOvershoot[i % R5CAP_DIAG_EVENTS] = overshoot;
+                diag->eventCount = i + 1;
+                diag->lateEvents = diag->lateEvents + 1;
+            }
+            if (overshoot > maxOvershoot) {
+                maxOvershoot = overshoot;
+            }
             CAPTURE_tick();
             if (++framesInBlock == BLOCK_FRAMES) {
                 framesInBlock = 0;
+                diag->maxOvershootTicks = maxOvershoot;
                 if (controlPending() || atomic_get(&requestedRate) != rate) {
                     break;
                 }
             }
+        }
+        if (lockIrqs) {
+            irq_unlock(irqKey);
         }
         CAPTURE_stop();
         pauseBackgroundWork(false);
