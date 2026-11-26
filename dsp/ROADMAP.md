@@ -31,7 +31,7 @@ Real-data evidence so far: one clap recording and one live tap run
 8. **Adaptive noise floor** (small). Update slowly while idle, instead of once at start-up.
 
 Later / larger:
-- **Near-field correction.** The far-field formula is a few degrees off at large angles at 1 m with 0.27 m spacing. Option: send the raw TDOA and let the master triangulate with hyperbolas.
+- **Near-field correction.** The far-field formula's error at 0.27 m spacing is about 0.2° at 1 m, 0.9° at 0.5 m and 2.3-2.7° at 0.3 m (computed, exact geometry vs. formula). Only matters for impacts very close to a node. Option: send the raw TDOA and let the master triangulate with hyperbolas.
 - **Front/back ambiguity.** Only a third microphone resolves it (`PROTO_EVENT_THETA_MIRROR` until then).
 - **Sample rate / spacing.** 24k works when quiet; wider spacing helps resolution more than rate, at the cost of spatial aliasing (c / 2d = 635 Hz at 0.27 m).
 
