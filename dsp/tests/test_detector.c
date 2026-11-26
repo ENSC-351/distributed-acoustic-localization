@@ -5,6 +5,7 @@
 // sizes, with a direct offline transcription of detector.py's _run() loop
 // (reference_detect below): same triggers, same windows, same DC.
 #include "dsp/detector.h"
+#include "dsp/highpass.h"
 #include "dsp/tdoa.h"
 
 #include <math.h>
@@ -514,6 +515,43 @@ static void test_emitted_on_last_sample(void)
     free(r.frames);
 }
 
+// High-pass: removes DC and hum, keeps clap frequencies
+static double sine_gain(double freq_hz, double cutoff_hz)
+{
+    struct dsp_highpass hp;
+    dsp_highpass_init(&hp, cutoff_hz, FS, 2);
+    enum { N = 20000 };
+    static uint16_t buf[2 * N];
+    for (int i = 0; i < N; i++) {
+        double v = 2048.0 + 500.0 * sin(2.0 * 3.14159265358979323846 * freq_hz * i / FS);
+        buf[2 * i] = buf[2 * i + 1] = (uint16_t)lround(v);
+    }
+    dsp_highpass_process(&hp, buf, buf, N);
+    double peak = 0.0;
+    for (int i = N / 2; i < N; i++) {   // after it settles
+        double d = fabs((double)buf[2 * i] - 2048.0);
+        peak = d > peak ? d : peak;
+    }
+    return peak / 500.0;
+}
+
+static void test_highpass(void)
+{
+    struct dsp_highpass hp;
+    CHECK(!dsp_highpass_init(&hp, 0.0, FS, 2) && !dsp_highpass_init(&hp, FS, FS, 2), "bad cut-offs rejected");
+    CHECK(dsp_highpass_init(&hp, 500.0, FS, 2), "500 Hz at 20 kHz");
+    uint16_t dc[2 * 64];
+    for (int i = 0; i < 128; i++) {
+        dc[i] = 1999;
+    }
+    dsp_highpass_process(&hp, dc, dc, 64);
+    CHECK(dc[0] == 2048 && dc[126] == 2048, "DC removed without a step: %u %u", dc[0], dc[126]);
+    double g50 = sine_gain(50.0, 500.0), g500 = sine_gain(500.0, 500.0), g3k = sine_gain(3000.0, 500.0);
+    CHECK(g50 < 0.02, "50 Hz gain %.3f", g50);
+    CHECK(fabs(g500 - 0.707) < 0.05, "gain at the cut-off %.3f", g500);
+    CHECK(fabs(g3k - 1.0) < 0.05, "3 kHz gain %.3f", g3k);
+}
+
 int main(void)
 {
     test_config();
@@ -524,6 +562,7 @@ int main(void)
     test_drop_oldest();
     test_emitted_on_last_sample();
     test_into_estimator();
+    test_highpass();
     printf("test_detector: %d checks, %d failed\n", checks, failures);
     return failures;
 }

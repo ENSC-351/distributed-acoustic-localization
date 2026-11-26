@@ -18,3 +18,7 @@ target_link_libraries(tdoa_cli PRIVATE dsp)
 # Command-line tool: run the streaming detector over a recording (text file)
 add_executable(detector_cli tools/detector_cli.c)
 target_link_libraries(detector_cli PRIVATE dsp)
+
+# Command-line tool: detector + estimator over a recording, for tuning
+add_executable(pipeline_cli tools/pipeline_cli.c)
+target_link_libraries(pipeline_cli PRIVATE dsp)

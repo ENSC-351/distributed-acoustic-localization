@@ -14,6 +14,13 @@
 //                      line ("a,b" in ADC counts), looped in real time (no hardware needed)
 //   DSP_REPLAY_FS      its sample rate (default 20000)
 //   DSP_VERBOSE        1 = print every window and estimate
+// Tuning (defaults from real claps on Joey's board, 2026-11-26; one recording,
+// so retune with dsp/tools/pipeline_cli on more data):
+//   DSP_HIGHPASS_HZ    high-pass before detection and estimation (500; 0 = off)
+//   DSP_THRESHOLD      trigger at this multiple of the noise-floor energy (300)
+//   DSP_HOLDOFF_MS     ignore triggers this long after one (300)
+//   DSP_PRE_MS / DSP_POST_MS   window before / after the trigger (2 / 5)
+//   DSP_MIN_PTR        estimator's minimum peak-to-RMS (3)
 //
 // Directions the estimator refuses (too weak, out of range, ...) are not sent;
 // they are counted and printed in the periodic summary. event_id counts every
@@ -24,6 +31,7 @@
 #include "audio/audio_capture.h"
 #include "common/timing.h"
 #include "dsp/detector.h"
+#include "dsp/highpass.h"
 #include "dsp/tdoa.h"
 
 #include <assert.h>
@@ -53,6 +61,12 @@ struct Settings {
 	const char *replayPath;
 	double replayFs;
 	bool verbose;
+	double highpassHz;
+	double threshold;
+	double holdoffMs;
+	double preMs;
+	double postMs;
+	double minPeakToRms;
 };
 
 // Event queue (DSP thread pushes, networking thread pops)
@@ -115,6 +129,12 @@ static void readSettings(void)
 	settings.replayPath = getenv("DSP_REPLAY");
 	settings.replayFs = envDouble("DSP_REPLAY_FS", DEFAULT_REPLAY_FS);
 	settings.verbose = envFlag("DSP_VERBOSE");
+	settings.highpassHz = envDouble("DSP_HIGHPASS_HZ", 500.0);
+	settings.threshold = envDouble("DSP_THRESHOLD", 300.0);
+	settings.holdoffMs = envDouble("DSP_HOLDOFF_MS", 300.0);
+	settings.preMs = envDouble("DSP_PRE_MS", 2.0);
+	settings.postMs = envDouble("DSP_POST_MS", 5.0);
+	settings.minPeakToRms = envDouble("DSP_MIN_PTR", 3.0);
 	if (getenv("DSP_MIC_SPACING_M") == NULL) {
 		fprintf(stderr, "DSP: DSP_MIC_SPACING_M not set, assuming %.2f m\n", settings.spacingM);
 	}
@@ -139,6 +159,10 @@ static void pushEvent(const struct proto_event *event)
 // ------------------------------------------------------------ processing
 
 struct Pipeline {
+	struct dsp_highpass highpass;
+	bool useHighpass;
+	uint16_t *filtered;          // high-passed copy of the current block
+	size_t filteredFrames;
 	struct dsp_detector *detector;
 	struct dsp_tdoa_estimator *estimator;
 	double sampleRateHz;
@@ -152,6 +176,11 @@ static bool pipelineCreate(struct Pipeline *p, double sampleRateHz, double skewS
 	dcfg.sample_rate_hz = sampleRateHz;
 	dcfg.channel_a = settings.swapMics ? 1 : 0;
 	dcfg.channel_b = settings.swapMics ? 0 : 1;
+	dcfg.threshold_ratio = settings.threshold;
+	dcfg.holdoff_ms = settings.holdoffMs;
+	dcfg.pre_ms = settings.preMs;
+	dcfg.post_ms = settings.postMs;
+	dcfg.check_clipping = settings.highpassHz <= 0.0;   // filtered samples can't show ADC clipping
 
 	struct dsp_tdoa_config tcfg;
 	dsp_tdoa_default_config(&tcfg);
@@ -159,6 +188,7 @@ static bool pipelineCreate(struct Pipeline *p, double sampleRateHz, double skewS
 	tcfg.mic_spacing_m = settings.spacingM;
 	tcfg.channel_skew_s = skewS;
 	tcfg.method = settings.method;
+	tcfg.min_peak_to_rms = settings.minPeakToRms;
 
 	p->detector = dsp_detector_create(&dcfg);
 	size_t windowLen = (size_t)((dcfg.pre_ms + dcfg.post_ms) * 1e-3 * sampleRateHz) + 2;
@@ -172,9 +202,16 @@ static bool pipelineCreate(struct Pipeline *p, double sampleRateHz, double skewS
 		dsp_tdoa_destroy(p->estimator);
 		return false;
 	}
+	p->useHighpass = settings.highpassHz > 0.0 && dsp_highpass_init(&p->highpass, settings.highpassHz,
+	                                                                  sampleRateHz, MIC_COUNT);
+	p->filtered = NULL;
+	p->filteredFrames = 0;
 	fprintf(stderr, "DSP: %.1f frames/s, spacing %.3f m, skew %.2f us, %s%s\n", sampleRateHz,
 	        settings.spacingM, skewS * 1e6, settings.method == DSP_TDOA_GCC_PHAT ? "GCC-PHAT" : "xcorr",
 	        settings.swapMics ? ", mics swapped" : "");
+	fprintf(stderr, "DSP: high-pass %.0f Hz, trigger %.0fx floor, holdoff %.0f ms, window %.1f+%.1f ms, "
+	                "min peak/rms %.1f\n", p->useHighpass ? settings.highpassHz : 0.0, settings.threshold,
+	        settings.holdoffMs, settings.preMs, settings.postMs, settings.minPeakToRms);
 	return true;
 }
 
@@ -182,8 +219,10 @@ static void pipelineDestroy(struct Pipeline *p)
 {
 	dsp_detector_destroy(p->detector);
 	dsp_tdoa_destroy(p->estimator);
+	free(p->filtered);
 	p->detector = NULL;
 	p->estimator = NULL;
+	p->filtered = NULL;
 }
 
 static void handleWindow(struct Pipeline *p, const struct dsp_detector_window *w)
@@ -227,6 +266,21 @@ static void handleWindow(struct Pipeline *p, const struct dsp_detector_window *w
 static void processBlock(struct Pipeline *p, const uint16_t *frames, int numFrames,
                          const struct dsp_detector_block *block)
 {
+	if (p->useHighpass) {
+		if ((size_t)numFrames > p->filteredFrames) {
+			uint16_t *grown = realloc(p->filtered, (size_t)numFrames * MIC_COUNT * sizeof(uint16_t));
+			if (grown == NULL) {
+				return;
+			}
+			p->filtered = grown;
+			p->filteredFrames = (size_t)numFrames;
+		}
+		if (block->discontinuity || block->disturbed) {
+			dsp_highpass_reset(&p->highpass);
+		}
+		dsp_highpass_process(&p->highpass, frames, p->filtered, (size_t)numFrames);
+		frames = p->filtered;
+	}
 	dsp_detector_push(p->detector, frames, (size_t)numFrames, block);
 	struct dsp_detector_window w;
 	while (dsp_detector_next(p->detector, &w)) {
