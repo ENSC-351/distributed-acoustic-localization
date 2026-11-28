@@ -1,8 +1,7 @@
 // netServer.c
 // Network server module: one thread uses poll() to watch the listening
 // socket and every node's socket at once, so no node can hold up another.
-//
-//TODO:
+
 //  - a node connecting with an ID that's already connected should replace
 //    the old connection (send it BYE with PROTO_BYE_REPLACED)
 //  - log HEARTBEAT problems (clock not synced, DSP not alive, ring drops)
@@ -51,6 +50,12 @@ typedef struct {
 	uint32_t nextSeq;               //for messages we send this client
 	long long lastRecvMs;           // CLOCK_MONOTONIC of the last bytes received
 	Framing_reader_t reader;        // one per connection: each has its own partial message
+
+	// Health from the last HEARTBEAT, so problems are logged once when they
+	// change instead of every second
+	bool clockSynced;
+	bool dspAlive;
+	uint32_t ringDrops;             // the node's running total
 } Client_t;
 
 // Thread start/stop state (from netClient.c)
@@ -75,9 +80,11 @@ static bool handleHello(Client_t *pClient, const struct proto_header *pHeader,
 static bool handleSessionMessage(Client_t *pClient, const struct proto_header *pHeader,
                                  const uint8_t *pPayload);
 static void handleEvent(Client_t *pClient, const struct proto_event *pEvent);
+static void handleHeartbeat(Client_t *pClient, const struct proto_heartbeat *pHeartbeat);
 
 static void dropSilentClients(void);
 static void closeAllClients(void);
+static void replaceClientConnection(Client_t *pNewClient);
 static void closeClient(Client_t *pClient);
 
 static bool sendHelloAck(Client_t *pClient, uint8_t status);
@@ -176,7 +183,7 @@ void NetServer_cleanup(void) // (from netClient.c)
 	printf("NetServer thread cleaned up successfully.\n");
 }
 
-//dame as netClient.c
+//same as netClient.c
 static bool isThreadRunning(void)
 {
 	pthread_mutex_lock(&lock);
@@ -237,6 +244,8 @@ static void acceptClient(void)
 		.state = CLIENT_AWAITING_HELLO, //the client is connected, but hasn't said who it is yet
 		.socketFd = socketFd, //the socket for this client
 		.lastRecvMs = Timing_getMonotonicMs(), //set the last received time to now
+		.clockSynced = true, // assume healthy, so a bad first HEARTBEAT gets logged
+		.dspAlive = true,
 		//.nextSeq = 0, //the next sequence number for messages we send to this. i dont think we need this may be useful for debugging
 	};
 	inet_ntop(AF_INET, &address.sin_addr, pClient->address, sizeof(pClient->address));//convert the IP address to a string and store it in the client struct
@@ -313,6 +322,7 @@ static bool handleHello(Client_t *pClient, const struct proto_header *pHeader, c
 
 	pClient->state = CLIENT_ACTIVE;
 	pClient->nodeId = pHeader->node_id;
+	replaceClientConnection(pClient); // must come after nodeId is set
 	bool isConnected = sendHelloAck(pClient, PROTO_HELLO_OK);
 	if (isConnected) {
 		printf("Node %u connected from %s (%u mics).\n",
@@ -327,6 +337,7 @@ static bool handleSessionMessage(Client_t *pClient, const struct proto_header *p
 {
 	bool isConnected = true;
 	struct proto_event event;
+	struct proto_heartbeat heartbeat;
 	switch (pHeader->msg_type) {
 	case PROTO_MSG_EVENT:
 		if (proto_unpack_event(pPayload, pHeader->payload_len, &event) == PROTO_OK) {
@@ -335,7 +346,9 @@ static bool handleSessionMessage(Client_t *pClient, const struct proto_header *p
 		break;
 	case PROTO_MSG_HEARTBEAT:
 		//receiving it already updated lastRecvMs, which is its main job.
-		// TODO: unpack it and check clock_synced, dsp_alive and ring_drops.
+		if (proto_unpack_heartbeat(pPayload, pHeader->payload_len, &heartbeat) == PROTO_OK) {
+			handleHeartbeat(pClient, &heartbeat);
+		}
 		break;
 	case PROTO_MSG_BYE:
 		printf("Node %u said BYE.\n", pClient->nodeId);
@@ -363,6 +376,40 @@ static void handleEvent(Client_t *pClient, const struct proto_event *pEvent)
 	EventBuffer_add(&entry);
 }
 
+// Log a node's health problems only when they change, since a HEARTBEAT
+// arrives about every second
+static void handleHeartbeat(Client_t *pClient, const struct proto_heartbeat *pHeartbeat)
+{
+	bool isClockSynced = (pHeartbeat->clock_synced != 0);
+	if (isClockSynced != pClient->clockSynced) {
+		if (isClockSynced) {
+			printf("Node %u: clock synced again.\n", pClient->nodeId);
+		} else {
+			fprintf(stderr, "Node %u: clock NOT synced (est. error %u us), its timestamps are unreliable.\n",
+			        pClient->nodeId, pHeartbeat->clock_err_us);
+		}
+		pClient->clockSynced = isClockSynced;
+	}
+
+	bool isDspAlive = (pHeartbeat->dsp_alive != 0);
+	if (isDspAlive != pClient->dspAlive) {
+		if (isDspAlive) {
+			printf("Node %u: DSP is running again.\n", pClient->nodeId);
+		} else {
+			fprintf(stderr, "Node %u: DSP is not producing audio.\n", pClient->nodeId);
+		}
+		pClient->dspAlive = isDspAlive;
+	}
+
+	// ring_drops is a running total, so only the increase is new
+	if (pHeartbeat->ring_drops > pClient->ringDrops) {
+		fprintf(stderr, "Node %u: DSP dropped %u events (total %u).\n",
+		        pClient->nodeId, pHeartbeat->ring_drops - pClient->ringDrops,
+		        pHeartbeat->ring_drops);
+	}
+	pClient->ringDrops = pHeartbeat->ring_drops;
+}
+
 static void dropSilentClients(void)
 {
 	long long nowMs = Timing_getMonotonicMs();
@@ -387,6 +434,28 @@ static void closeAllClients(void)
 		}
 		if (clients[i].state != CLIENT_FREE) {
 			closeClient(&clients[i]);
+		}
+	}
+}
+
+// If another active slot already has pNewClient's node ID, it's a stale
+// connection from the same node: tell it BYE (replaced) and close it.
+// Call only after pNewClient->nodeId has been set.
+static void replaceClientConnection(Client_t *pNewClient)
+{
+	for (int i = 0; i < MAX_CLIENTS; i++) {
+		Client_t *pOld = &clients[i];
+
+		// active, same node ID, and not the new connection itself
+		if (pOld->state == CLIENT_ACTIVE &&
+		    pOld->nodeId == pNewClient->nodeId &&
+		    pOld != pNewClient) {
+			printf("Node %u reconnected from %s, replacing old connection.\n",
+			       pNewClient->nodeId, pNewClient->address);
+
+			// BYE first: closeClient() closes the socket, so nothing could be sent after
+			sendBye(pOld, PROTO_BYE_REPLACED);
+			closeClient(pOld);
 		}
 	}
 }
