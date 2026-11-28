@@ -3,109 +3,125 @@
 <head>
 	<meta charset="UTF-8">
 	<meta name="viewport" content="width=device-width, initial-scale=1">
-	<title>Acoustic Localization</title>
+	<meta name="color-scheme" content="light">
+	<title>ENSC351 - Acoustic Localization</title>
+	<link rel="preload" href="/fonts/barlow-400-latin.woff2" as="font" type="font/woff2" crossorigin>
+	<link rel="preload" href="/fonts/ibm-plex-mono-400-latin.woff2" as="font" type="font/woff2" crossorigin>
 	<link rel="stylesheet" href="/stylesheets/style.css">
 </head>
 <body>
 	<header>
 		<div class="title">
-			<h1>Acoustic Localization</h1>
-			<span id="demo-badge" class="badge" hidden>DEMO DATA</span>
-			<span id="link-state" class="badge muted">connecting...</span>
+			<h1>ENSC351 - Acoustic Localization</h1>
+			<span id="demo-badge" class="badge" hidden>Demo data</span>
+			<span id="link-state" class="badge">connecting&hellip;</span>
+			<span id="paused-badge" class="badge paused" hidden>Paused</span>
 		</div>
-		<button type="button" id="simulate" class="primary" hidden>Simulate sound</button>
+		<div class="controls">
+			<span id="clock" class="clock" aria-label="Current time">&ndash;</span>
+			<button type="button" id="pause" aria-pressed="false" title="Freeze the map (Space)"></button>
+			<button type="button" id="simulate" class="primary" hidden>Simulate sound</button>
+		</div>
 	</header>
 
-	<div id="error-box" hidden>
-		<strong>Server error</strong>
-		<code id="error-text"></code>
+	<div id="error-box" role="alert" hidden>
+		<strong>Connection problem</strong>
+		<span id="error-text"></span>
 	</div>
 
 	<main>
 		<div id="left">
-			<section id="map-box" class="panel">
+			<section id="map-box" aria-label="Map">
 				<canvas id="map" aria-label="Map of the nodes, their direction lines and the estimated sound location"></canvas>
 				<p class="legend">
-					<span class="key key-node"></span>node, tick = facing
-					<span class="key key-ray"></span>direction it heard
-					<span class="key key-heat"></span>where the lines agree
-					<span class="key key-fix"></span>estimate
-					<span class="key key-trail"></span>earlier sounds
+					<span class="item"><span class="key key-node"></span>node, tick = facing</span>
+					<span class="item"><span class="key key-ray"></span>direction it heard</span>
+					<span class="item"><span class="key key-heat"></span>where the lines agree</span>
+					<span class="item"><span class="key key-fix"></span>estimate</span>
+					<span class="item"><span class="key key-trail"></span>earlier sounds</span>
 				</p>
 			</section>
 
-			<section class="panel explain">
-				<h2>How to read this</h2>
+			<section id="chart-box">
+				<h2>Confidence per node</h2>
+				<canvas id="confidence" class="chart" aria-label="Bell curve of each node's direction and confidence for the sound on the map"></canvas>
+				<p class="legend note">Each curve is centred on the angle (&theta;) the node heard. Taller and narrower means more confident.</p>
+			</section>
+
+			<section id="explain" class="explain">
 				<p id="demo-note" class="demo-note" hidden>
 					<strong>Demo data.</strong> The master is making up sounds at random spots and
 					adding about &plusmn;3&deg; of noise to each node's angle. The triangulation is the
 					real code, but the confidence values are random (0.6&ndash;1.0) and mean nothing.
 				</p>
-				<dl class="terms">
-					<dt>Node and its line</dt>
-					<dd>Each node has two microphones a few centimetres apart. A sound reaches one
-						mic slightly before the other, and that time difference gives the angle the
-						sound came from. The coloured line is drawn from the node along that angle.</dd>
+				<details>
+					<summary>How to read this <span class="hint">nodes, angles, spread, quality</span></summary>
+					<dl class="terms">
+						<dt>Node and its line</dt>
+						<dd>Each node has two microphones a few centimetres apart. A sound reaches one
+							mic slightly before the other, and that time difference gives the angle the
+							sound came from. The coloured line is drawn from the node along that angle.</dd>
 
-					<dt>&theta; (theta)</dt>
-					<dd>The angle the node reports, relative to the way it faces (the tick on the
-						node). 0&deg; is straight ahead; positive turns toward mic&nbsp;B, which is
-						clockwise on this map. It covers &minus;90&deg; to +90&deg; only: a two-mic
-						node can't tell a sound in front from one behind it, so every node faces
-						into the triangle and we assume the sound is in front.</dd>
+						<dt>&theta; (theta)</dt>
+						<dd>The angle the node reports, relative to the way it faces (the tick on the
+							node). 0&deg; is straight ahead; positive turns toward mic&nbsp;B, which is
+							clockwise on this map. It covers &minus;90&deg; to +90&deg; only: a two-mic
+							node can't tell a sound in front from one behind it, so every node faces
+							into the triangle and we assume the sound is in front.</dd>
 
-					<dt>Bearing</dt>
-					<dd>The same direction on the map: the node's facing minus &theta;, in degrees
-						counter-clockwise from the +x axis.</dd>
+						<dt>Bearing</dt>
+						<dd>The same direction on the map: the node's facing minus &theta;, in degrees
+							counter-clockwise from the +x axis.</dd>
 
-					<dt>Estimate</dt>
-					<dd>The point closest to all the lines at once (least squares). Lines from more
-						confident nodes pull harder. It needs at least two lines.</dd>
+						<dt>Estimate</dt>
+						<dd>The point closest to all the lines at once (least squares). Lines from more
+							confident nodes pull harder. It needs at least two lines.</dd>
 
-					<dt>Miss</dt>
-					<dd>How far each line passes from the estimate. If one node's miss is much
-						bigger than the others', that node probably got the angle wrong.</dd>
+						<dt>Miss</dt>
+						<dd>How far each line passes from the estimate. If one node's miss is much
+							bigger than the others', that node probably got the angle wrong.</dd>
 
-					<dt>Spread</dt>
-					<dd>The typical miss over all lines (confidence-weighted RMS). Small means the
-						lines agree. With only two lines it is always zero, because two lines
-						always cross, so it only means something with three.</dd>
+						<dt>Spread</dt>
+						<dd>The typical miss over all lines (confidence-weighted RMS). Small means the
+							lines agree. With only two lines it is always zero, because two lines
+							always cross, so it only means something with three.</dd>
 
-					<dt>Confidence</dt>
-					<dd>A number from 0 to 1 that each node's detector sends with its angle: how
-						sure it is that it heard a real sound clearly. Its exact meaning is set by
-						the DSP code (the protocol still marks it as proposed). Here it is used as
-						each line's weight, and values under 0.5 are shown in red.</dd>
+						<dt>Confidence</dt>
+						<dd>A number from 0 to 1 that each node's detector sends with its angle: how
+							sure it is that it heard a real sound clearly. Its exact meaning is set by
+							the DSP code (the protocol still marks it as proposed). Here it is used as
+							each line's weight, and values under 0.5 are highlighted.</dd>
 
-					<dt>Heat map</dt>
-					<dd>Brighter means more of the lines point there. Each line is treated as a
-						narrow wedge (&plusmn;5&deg; at confidence 1, wider when the node is less
-						sure), so the bright patch shows how far the true spot could be from the
-						estimate. A long, thin patch means the position is less certain along its
-						length. Brightness is relative: the best spot is always brightest, even for
-						a bad fix.</dd>
+						<dt>Heat map</dt>
+						<dd>Red where the lines agree most, fading through orange to yellow. Each line
+							is treated as a narrow wedge (&plusmn;5&deg; at confidence 1, wider when the
+							node is less sure), so the coloured patch shows how far the true spot could
+							be from the estimate. A long, thin patch means the position is less certain
+							along its length. It is relative: the best spot is always red, even for a
+							bad fix.</dd>
 
-					<dt>Quality</dt>
-					<dd><span class="quality q-good">Good</span> three lines, spread up to 5&nbsp;cm.
-						<span class="quality q-fair">Fair</span> spread 5&ndash;15&nbsp;cm, or only two
-						lines (no cross-check).
-						<span class="quality q-poor">Poor</span> spread over 15&nbsp;cm, or the lines
-						cross behind a node (marked <strong>?</strong> on the map: probably a
-						front/back mirror).
-						<span class="quality q-none">No fix</span> fewer than two lines, or parallel
-						lines. These limits are placeholders until we have real tap tests.</dd>
-				</dl>
+						<dt>Quality</dt>
+						<dd><span class="quality q-good">Good</span> three lines, spread up to 5&nbsp;cm.
+							<span class="quality q-fair">Fair</span> spread 5&ndash;15&nbsp;cm, or only two
+							lines (no cross-check).
+							<span class="quality q-poor">Poor</span> spread over 15&nbsp;cm, or the lines
+							cross behind a node (marked <strong>?</strong> on the map: probably a
+							front/back mirror).
+							<span class="quality q-none">No fix</span> fewer than two lines, or parallel
+							lines. These limits are placeholders until we have real tap tests.</dd>
+					</dl>
+				</details>
 			</section>
 		</div>
 
-		<section id="side">
-			<div class="panel">
+		<div id="side">
+			<section id="fix-panel" aria-label="Last sound">
 				<div class="panel-head">
 					<h2 id="fix-title">Last sound</h2>
-					<span id="fix-age" class="muted small"></span>
+					<span id="fix-age" class="age"></span>
 				</div>
 				<div class="fix-head">
-					<div id="fix-position" class="big">&ndash;</div>
+					<div id="fix-position" class="readout">&ndash;</div>
 					<span id="fix-quality" class="quality q-none" hidden></span>
 				</div>
 				<p id="fix-reason" class="reason">Waiting for a sound.</p>
@@ -115,37 +131,44 @@
 				</dl>
 				<table class="lines">
 					<thead>
-						<tr><th>Node</th><th>&theta;</th><th>Bearing</th><th>Conf.</th><th>Miss</th></tr>
+						<tr>
+							<th>Node</th>
+							<th title="Angle the node heard, from the way it faces (&minus;90&deg; to +90&deg;)">&theta;</th>
+							<th title="The same line as a map direction, counter-clockwise from +x">Bearing</th>
+							<th title="Node's confidence, 0 to 1; used as the line's weight">Conf.</th>
+							<th title="How far this line passes from the estimate">Miss</th>
+						</tr>
 					</thead>
 					<tbody id="line-rows"></tbody>
 				</table>
-			</div>
+				<p id="announcer" class="sr-only" aria-live="polite"></p>
+			</section>
 
-			<div class="panel">
+			<section id="nodes-panel" class="panel">
 				<h2>Nodes</h2>
 				<table>
 					<thead>
-						<tr><th>Node</th><th>Link</th><th>Last heard</th><th>Events</th></tr>
+						<tr><th>Node</th><th>Link</th><th title="Time since this node last heard a sound">Last heard</th><th>Events</th></tr>
 					</thead>
 					<tbody id="node-rows">
 						<tr><td colspan="4">No nodes yet</td></tr>
 					</tbody>
 				</table>
-			</div>
+			</section>
 
-			<div class="panel">
+			<section id="history-panel" class="panel">
 				<h2>Recent sounds</h2>
 				<ol id="history"><li class="muted">None yet</li></ol>
-			</div>
+			</section>
 
-			<div class="panel footer">
+			<section id="footer-panel" class="panel footer" aria-label="Master">
 				<dl class="stats">
 					<dt>Master up</dt> <dd id="master-uptime">&ndash;</dd>
 					<dt>Board up</dt>  <dd id="board-uptime">&ndash;</dd>
 				</dl>
-				<button type="button" id="stop" class="danger">Terminate master</button>
-			</div>
-		</section>
+				<button type="button" id="stop" class="quiet">Terminate master</button>
+			</section>
+		</div>
 	</main>
 
 	<script src="/socket.io/socket.io.js"></script>

@@ -12,11 +12,15 @@
 var STATUS_POLL_MS = 100;
 var UPTIME_POLL_MS = 1000;
 var SERVER_TIMEOUT_MS = 1000;
-var ERROR_SHOW_MS = 5000;
+var CANVAS_FONT = "'IBM Plex Mono', ui-monospace, monospace";
+var CANVAS_SANS = "Barlow, 'Segoe UI', sans-serif";
+var DISPLAY_UTC_OFFSET_H = -7;  // clock shown at UTC-7, 24-hour, no daylight-time switch
 var STALE_NODE_MS = 3000;       // matches PROTO_TIMEOUT_MS
 
 var MAP_PADDING_M = 0.9;        // space around the triangle
-var GRID_STEP_M = 0.5;
+var GRID_STEP_M = 0.1;
+var GRID_MAJOR_EVERY = 5;          // every 5th line (0.5 m) is brighter and always labelled
+var GRID_LABEL_MIN_PX = 34;        // label every line only if they are this far apart
 var RAY_PAST_FIX_M = 0.4;       // lines stop this far past the estimate
 var TRAIL_LENGTH = 7;           // earlier estimates shown as dots
 
@@ -33,15 +37,22 @@ var LOW_CONFIDENCE = 0.5;
 /* ---------- state ---------- */
 var socket = io.connect();
 var communicationsTimeout = null;
-var hideErrorTimeout = null;
 
 var nodes = [];                 // latest node list from the master
 var nodesById = {};
 var fixes = [];                 // newest first
 var view = null;                // metres <-> pixels
-var heatCanvas = document.createElement('canvas');
-var heatKey = "";               // which fix and view the heat map was built for
+var mainHeat = {canvas: document.createElement('canvas'), key: ""};   // heat image for the main map
+var openSounds = {};            // fix id -> {heat} for rows opened in Recent sounds
+var historyKey = "";            // fix ids currently listed, to rebuild only on change
 var colors = {};
+var isDemo = false;
+var lastAnnouncedId = null;      // screen readers hear each new sound once
+var isPaused = false;            // map, last sound and history frozen
+var pendingStatus = null;       // newest status received while paused
+var clockOffsetMs = 0;          // server clock minus this browser's clock
+var lastSoundAt = {};           // node id -> {events, at}: when it last heard a sound
+var detectedAt = {};            // fix id -> browser time (ms) the sound was detected
 
 document.addEventListener('DOMContentLoaded', function() {
 	readColors();
@@ -49,8 +60,12 @@ document.addEventListener('DOMContentLoaded', function() {
 
 	sendCommandToServer('status');
 	sendCommandToServer('read-uptime');
+	socket.emit('read-time');
 	window.setInterval(function() { sendCommandToServer('status'); }, STATUS_POLL_MS);
+	window.setInterval(function() { socket.emit('read-time'); }, 60000);
 	window.setInterval(function() { sendCommandToServer('read-uptime'); }, UPTIME_POLL_MS);
+	updateTimes();
+	window.setInterval(updateTimes, 1000);   // clock and "s ago" keep counting, even when paused
 
 	document.getElementById('simulate').addEventListener('click', function() {
 		sendCommandToServer('sound');
@@ -60,18 +75,30 @@ document.addEventListener('DOMContentLoaded', function() {
 			sendCommandToServer('stop');
 		}
 	});
-	window.addEventListener('resize', drawMap);
+	document.getElementById('pause').addEventListener('click', togglePause);
+	document.addEventListener('keydown', function(e) {
+		// Space toggles, unless a button or field has focus (it would click that too)
+		if (e.code === 'Space' && !/^(BUTTON|INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName)) {
+			e.preventDefault();
+			togglePause();
+		}
+	});
+	window.addEventListener('resize', function() { drawMap(); redrawOpenSounds(); });
+	if (document.fonts) {
+		document.fonts.ready.then(function() { drawMap(); redrawOpenSounds(); });   // canvas text needs the web fonts first
+	}
+	setPauseButton();
 	window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', function() {
 		readColors();
-		heatKey = "";
+		mainHeat.key = "";
 		drawMap();
 	});
 });
 
 function readColors() {
 	var css = getComputedStyle(document.documentElement);
-	['map-bg', 'map-grid', 'map-label', 'map-triangle', 'node-1', 'node-2', 'node-3',
-	 'fix', 'heat-1', 'heat-2'].forEach(function(name) {
+	['map-bg', 'map-grid', 'map-grid-major', 'map-label', 'map-triangle', 'node-1', 'node-2', 'node-3',
+	 'fix', 'problem', 'heat-1', 'heat-2', 'heat-low', 'heat-mid', 'heat-high'].forEach(function(name) {
 		colors[name] = css.getPropertyValue('--' + name).trim();
 	});
 }
@@ -93,6 +120,7 @@ function setupServerMessageHandlers() {
 			return;
 		}
 		setLinkState(true);
+		document.getElementById('error-box').hidden = true;
 		onStatus(status);
 	});
 
@@ -100,6 +128,12 @@ function setupServerMessageHandlers() {
 		clearServerTimeout();
 		var seconds = Number(message.split(" ")[0]);
 		setText('board-uptime', formatDuration(seconds * 1000));
+	});
+
+	// Use the server's clock (synced), not this computer's, which may be wrong
+	socket.on('time-reply', function(serverMs) {
+		clockOffsetMs = Number(serverMs) - Date.now();
+		updateTimes();
 	});
 
 	socket.on('sound-reply', clearServerTimeout);
@@ -112,7 +146,39 @@ function setupServerMessageHandlers() {
 	socket.on('master-error', errorHandler);
 }
 
+function togglePause() {
+	isPaused = !isPaused;
+	var button = document.getElementById('pause');
+	setPauseButton();
+	document.getElementById('paused-badge').hidden = !isPaused;
+	if (!isPaused && pendingStatus) {
+		var status = pendingStatus;
+		pendingStatus = null;
+		onStatus(status);
+	}
+}
+
+var ICON_PAUSE = '<svg viewBox="0 0 14 14" aria-hidden="true"><rect x="2" y="1.5" width="3.5" height="11" rx="1"/><rect x="8.5" y="1.5" width="3.5" height="11" rx="1"/></svg>';
+var ICON_PLAY = '<svg viewBox="0 0 14 14" aria-hidden="true"><path d="M3 1.8v10.4a.8.8 0 0 0 1.2.7l8.6-5.2a.8.8 0 0 0 0-1.4L4.2 1.1A.8.8 0 0 0 3 1.8z"/></svg>';
+
+function setPauseButton() {
+	var button = document.getElementById('pause');
+	button.innerHTML = (isPaused ? ICON_PLAY + "Play" : ICON_PAUSE + "Pause");
+	button.setAttribute('aria-pressed', String(isPaused));
+	button.classList.toggle('paused', isPaused);
+}
+
 function onStatus(status) {
+	rememberDetectionTimes(status.fixes);
+	if (isPaused) {
+		// Keep the board facts live; hold the map and sound panels still
+		pendingStatus = status;
+		setText('master-uptime', formatDuration(status.uptime_ms));
+		// Node table stays as it was at pause, like Recent sounds; its
+		// "Last heard" times still count up through updateTimes()
+		return;
+	}
+	isDemo = !!status.demo;
 	document.getElementById('demo-badge').hidden = !status.demo;
 	document.getElementById('demo-note').hidden = !status.demo;
 	document.getElementById('simulate').hidden = !status.demo;
@@ -187,11 +253,24 @@ function showFixPanel(fix) {
 	var lines = analyseLines(fix);
 	var rating = rateFix(fix, lines);
 
-	setText('fix-title', "Sound #" + fix.id);
-	setText('fix-age', formatAge(fix.age_ms));
-	setText('fix-position', fix.position
-		? "(" + fix.position.x.toFixed(2) + ", " + fix.position.y.toFixed(2) + ") m"
-		: "no position");
+	setText('fix-title', "Detected at " + formatClock(detectedAt[fix.id]));
+	document.getElementById('fix-title').title = "Sound #" + fix.id;
+	var age = document.getElementById('fix-age');
+	age.dataset.at = detectedAt[fix.id];
+	age.textContent = formatAge(nowMs() - detectedAt[fix.id]);
+	var readout = document.getElementById('fix-position');
+	if (fix.position) {
+		readout.innerHTML = "(" + fix.position.x.toFixed(2) + ", " + fix.position.y.toFixed(2) +
+			")<span class=\"unit\">m</span>";
+	} else {
+		readout.textContent = "no position";
+	}
+	if (fix.id !== lastAnnouncedId) {
+		lastAnnouncedId = fix.id;
+		setText('announcer', "Sound at " + formatClock(detectedAt[fix.id]) + ": " + (fix.position
+			? "x " + fix.position.x.toFixed(2) + ", y " + fix.position.y.toFixed(2) + " metres, " +
+			  rating.label : rating.label));
+	}
 	var badge = document.getElementById('fix-quality');
 	badge.textContent = rating.label;
 	badge.className = "quality q-" + rating.level;
@@ -200,7 +279,14 @@ function showFixPanel(fix) {
 
 	setText('fix-spread', fix.position && fix.bearings.length > 2 ? cm(fix.position.rms) : "–");
 	var total = fix.bearings.reduce(function(sum, b) { return sum + b.confidence; }, 0);
-	setText('fix-confidence', fix.bearings.length > 0 ? (total / fix.bearings.length).toFixed(2) : "–");
+	var conf = document.getElementById('fix-confidence');
+	conf.textContent = fix.bearings.length > 0 ? (total / fix.bearings.length).toFixed(2) : "–";
+	if (isDemo && fix.bearings.length > 0) {
+		var tag = document.createElement('span');
+		tag.className = 'demo-tag';
+		tag.textContent = "random in demo";
+		conf.appendChild(tag);
+	}
 
 	rows.innerHTML = "";
 	lines.forEach(function(l) {
@@ -221,26 +307,41 @@ function showFixPanel(fix) {
 			var row = document.createElement('tr');
 			row.className = 'muted';
 			addNodeCell(row, n.id);
-			var cell = addCell(row, "didn't report this sound");
-			cell.colSpan = 4;
+			addCell(row, "–");
+			addCell(row, "–");
+			addCell(row, "0.00", 'bad');
+			addCell(row, "–");
 			rows.appendChild(row);
 		}
 	});
 }
 
-function showNodeTable() {
+function showNodeTable(list) {
+	list = list || nodes;
 	var rows = document.getElementById('node-rows');
 	rows.innerHTML = "";
-	if (nodes.length === 0) {
+	if (list.length === 0) {
 		rows.innerHTML = '<tr><td colspan="4">No nodes yet</td></tr>';
 		return;
 	}
-	nodes.forEach(function(node) {
+	var now = nowMs();
+	list.forEach(function(node) {
 		var isLive = isNodeLive(node);
 		var row = document.createElement('tr');
 		addNodeCell(row, node.id);
-		addCell(row, isLive ? "up" : "down", isLive ? 'ok' : 'bad');
-		addCell(row, formatAge(node.seen_ms));
+		var link = addCell(row, isLive ? "up" : "down", isLive ? 'ok' : 'bad');
+		link.title = "Last message (heartbeat) " + formatAge(node.seen_ms);
+		// Time since this node's last sound. Fixed when its event count changes,
+		// then counted up locally (also while paused), like Recent sounds.
+		var heard = addCell(row, "never");
+		if (node.event_ms >= 0) {
+			var seen = lastSoundAt[node.id];
+			if (!seen || seen.events !== node.events) {
+				seen = lastSoundAt[node.id] = {events: node.events, at: now - node.event_ms};
+			}
+			heard.dataset.at = seen.at;
+			heard.textContent = formatAge(now - seen.at);
+		}
 		addCell(row, String(node.events));
 		rows.appendChild(row);
 	});
@@ -248,28 +349,132 @@ function showNodeTable() {
 
 function showHistory() {
 	var list = document.getElementById('history');
+	var key = fixes.map(function(f) { return f.id; }).join(",") + "|" + nodes.length;
+	if (key === historyKey) {
+		return;              // same sounds: leave open rows alone ("ago" ticks by itself)
+	}
+	historyKey = key;
 	list.innerHTML = "";
 	if (fixes.length === 0) {
 		list.innerHTML = '<li class="muted">None yet</li>';
 		return;
 	}
+	var stillListed = {};
 	fixes.forEach(function(fix) {
-		var rating = rateFix(fix, analyseLines(fix));
-		var item = document.createElement('li');
-		var what = document.createElement('span');
-		var dot = document.createElement('span');
-		dot.className = "qdot q-" + rating.level;
-		dot.title = rating.label;
-		what.appendChild(dot);
-		what.appendChild(document.createTextNode("#" + fix.id + "  " + (fix.position
-			? "(" + fix.position.x.toFixed(2) + ", " + fix.position.y.toFixed(2) + ")"
-			: "no fix") + "  · " + fix.bearings.length + " line" + (fix.bearings.length === 1 ? "" : "s")));
-		var when = document.createElement('span');
-		when.className = 'when';
-		when.textContent = formatAge(fix.age_ms);
-		item.appendChild(what);
-		item.appendChild(when);
-		list.appendChild(item);
+		stillListed[fix.id] = true;
+		list.appendChild(makeHistoryItem(fix));
+	});
+	Object.keys(openSounds).forEach(function(id) {
+		if (!stillListed[id]) {
+			delete openSounds[id];      // scrolled off the master's list
+		}
+	});
+	redrawOpenSounds();
+}
+
+// One row of Recent sounds; click it to show that sound's map, confidence
+// curves and coordinates underneath
+function makeHistoryItem(fix) {
+	var rating = rateFix(fix, analyseLines(fix));
+	var isOpen = !!openSounds[fix.id];
+	var item = document.createElement('li');
+	item.dataset.fixId = fix.id;
+
+	var row = document.createElement('button');
+	row.type = 'button';
+	row.className = 'sound-row';
+	row.title = "Sound #" + fix.id + ": show its map";
+	row.setAttribute('aria-expanded', String(isOpen));
+	row.setAttribute('aria-controls', 'sound-' + fix.id);
+
+	var what = document.createElement('span');
+	var dot = document.createElement('span');
+	dot.className = "qdot q-" + rating.level;
+	dot.title = rating.label;
+	what.appendChild(dot);
+	var label = document.createElement('span');
+	label.className = 'sr-only';
+	label.textContent = rating.label + ": ";
+	what.appendChild(label);
+	what.appendChild(document.createTextNode(formatClock(detectedAt[fix.id])));
+	var where = document.createElement('span');
+	where.textContent = fix.position
+		? "(" + fix.position.x.toFixed(2) + ", " + fix.position.y.toFixed(2) + ")"
+		: "no fix";
+	var count = document.createElement('span');
+	count.className = 'lines-count';
+	count.textContent = fix.bearings.length + " line" + (fix.bearings.length === 1 ? "" : "s");
+	var when = document.createElement('span');
+	when.className = 'when';
+	when.dataset.at = detectedAt[fix.id];
+	when.textContent = formatAge(nowMs() - detectedAt[fix.id]);
+	var chevron = document.createElement('span');
+	chevron.className = 'chevron';
+	chevron.setAttribute('aria-hidden', 'true');
+	[what, where, count, when, chevron].forEach(function(el) { row.appendChild(el); });
+
+	var detail = document.createElement('div');
+	detail.className = 'sound-detail';
+	detail.id = 'sound-' + fix.id;
+	detail.hidden = !isOpen;
+	var recorded = document.createElement('p');
+	recorded.className = 'detail-time';
+	recorded.textContent = "Recorded at " + formatClock(detectedAt[fix.id]);
+	var coords = document.createElement('p');
+	coords.className = 'detail-coords';
+	if (fix.position) {
+		coords.innerHTML = "(" + fix.position.x.toFixed(2) + ", " + fix.position.y.toFixed(2) +
+			")<span class=\"unit\">m</span>";
+	} else {
+		coords.textContent = "No position: fewer than two lines crossed.";
+	}
+	var map = document.createElement('canvas');
+	map.className = 'detail-map';
+	map.setAttribute('aria-label', "Map of this sound");
+	var chart = document.createElement('canvas');
+	chart.className = 'chart detail-chart';
+	chart.setAttribute('aria-label', "Confidence per node for this sound");
+	[recorded, coords, map, chart].forEach(function(el) { detail.appendChild(el); });
+
+	row.addEventListener('click', function() {
+		var open = !openSounds[fix.id];
+		if (open) {
+			openSounds[fix.id] = {heat: {canvas: document.createElement('canvas'), key: ""}};
+		} else {
+			delete openSounds[fix.id];
+		}
+		row.setAttribute('aria-expanded', String(open));
+		detail.hidden = !open;
+		if (open) {
+			drawSoundDetail(item, fix);
+		}
+	});
+
+	item.appendChild(row);
+	item.appendChild(detail);
+	return item;
+}
+
+function drawSoundDetail(item, fix) {
+	var state = openSounds[fix.id];
+	if (!state) {
+		return;
+	}
+	var mainView = view;          // renderMap sets the shared view; put it back after
+	renderMap(item.querySelector('.detail-map'), fix, state.heat, false);
+	drawConfidence(item.querySelector('.detail-chart'), fix);
+	view = mainView;
+}
+
+function redrawOpenSounds() {
+	document.querySelectorAll('#history li[data-fix-id]').forEach(function(item) {
+		var id = item.dataset.fixId;
+		if (openSounds[id]) {
+			var fix = fixes.find(function(f) { return String(f.id) === id; });
+			if (fix) {
+				drawSoundDetail(item, fix);
+			}
+		}
 	});
 }
 
@@ -300,7 +505,13 @@ function isNodeLive(node) {
 /* ---------- map ---------- */
 
 function drawMap() {
-	var canvas = document.getElementById('map');
+	var fix = fixes.length > 0 ? fixes[0] : null;
+	renderMap(document.getElementById('map'), fix, mainHeat, true);
+	drawConfidence(document.getElementById('confidence'), fix);
+}
+
+// The map for one sound. withTrail adds the earlier sounds as fading dots.
+function renderMap(canvas, fix, heatCache, withTrail) {
 	var ctx = canvas.getContext('2d');
 	var ratio = window.devicePixelRatio || 1;
 	var size = canvas.clientWidth;
@@ -318,14 +529,15 @@ function drawMap() {
 	view = makeView(size);
 	drawGrid(ctx, size);
 	drawTriangle(ctx);
-	drawTrail(ctx);
+	if (withTrail) {
+		drawTrail(ctx);
+	}
 
-	var fix = fixes.length > 0 ? fixes[0] : null;
 	if (fix) {
-		drawHeat(ctx, fix);
+		drawHeat(ctx, fix, heatCache);
 		fix.bearings.forEach(function(b) {
 			var node = nodesById[b.node];
-			if (node) {
+			if (node && b.confidence > 0) {     // no line at confidence 0
 				drawRay(ctx, node, b.bearing, rayLength(node, b.bearing, fix), nodeColor(node.id));
 			}
 		});
@@ -334,6 +546,123 @@ function drawMap() {
 		}
 	}
 	nodes.forEach(function(node) { drawNode(ctx, node); });
+}
+
+/* ---------- confidence curves under the map ---------- */
+
+// One bell curve per node for the sound on the map: centred on the angle it
+// heard (theta), as wide as the heat map treats that line (narrower = more sure).
+// Area 1 each, so a confident node is tall and thin, an unsure one low and wide.
+function drawConfidence(canvas, fix) {
+	var ctx = canvas.getContext('2d');
+	var ratio = window.devicePixelRatio || 1;
+	var w = canvas.clientWidth, h = canvas.clientHeight;
+	if (w === 0 || h === 0) {
+		return;
+	}
+	if (canvas.width !== Math.round(w * ratio) || canvas.height !== Math.round(h * ratio)) {
+		canvas.width = Math.round(w * ratio);
+		canvas.height = Math.round(h * ratio);
+	}
+	ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
+	ctx.fillStyle = colors['map-bg'];
+	ctx.fillRect(0, 0, w, h);
+
+	// Nodes with no curve get a note in a row of their own above the plot
+	var byNode = {};
+	if (fix) {
+		fix.bearings.forEach(function(b) { byNode[b.node] = b; });
+	}
+	var missing = nodes.filter(function(n) { return !byNode[n.id] || !(byNode[n.id].confidence > 0); });
+	var pad = {left: 26, right: 26, top: 24 + (missing.length > 0 ? 18 : 0), bottom: 26};
+	var plotW = w - pad.left - pad.right, plotH = h - pad.top - pad.bottom;
+	var toX = function(deg) { return pad.left + (deg + 90) / 180 * plotW; };
+	var peakMax = 1 / (HEAT_SIGMA_DEG * Math.sqrt(2 * Math.PI));   // tallest possible (confidence 1)
+	var toY = function(pdf) { return pad.top + plotH * (1 - pdf / peakMax); };
+
+	// Axis: theta every 30 degrees
+	ctx.font = "12px " + CANVAS_FONT;
+	ctx.textAlign = 'center';
+	ctx.lineWidth = 1;
+	for (var t = -90; t <= 90; t += 30) {
+		var px = Math.round(toX(t)) + 0.5;
+		ctx.strokeStyle = colors[t === 0 ? 'map-grid-major' : 'map-grid'];
+		line(ctx, px, pad.top, px, pad.top + plotH);
+		ctx.fillStyle = colors['map-label'];
+		ctx.fillText((t > 0 ? "+" : "") + t + "°", px, h - 8);
+	}
+	ctx.strokeStyle = colors['map-grid-major'];
+	line(ctx, pad.left, pad.top + plotH + 0.5, pad.left + plotW, pad.top + plotH + 0.5);
+
+	var labels = [];
+	nodes.forEach(function(node) {
+		var b = byNode[node.id];
+		var color = nodeColor(node.id);
+		if (!b || !(b.confidence > 0)) {
+			return;
+		}
+		var sigma = HEAT_SIGMA_DEG / Math.max(b.confidence, HEAT_MIN_CONFIDENCE);
+		var pdf = function(x) {
+			var z = (x - b.theta) / sigma;
+			return Math.exp(-0.5 * z * z) / (sigma * Math.sqrt(2 * Math.PI));
+		};
+		// Curve only (stroke), so the baseline stays neutral; fill underneath it
+		var curve = new Path2D();
+		for (var x = -90; x <= 90; x += 0.5) {
+			if (x === -90) {
+				curve.moveTo(toX(x), toY(pdf(x)));
+			} else {
+				curve.lineTo(toX(x), toY(pdf(x)));
+			}
+		}
+		var area = new Path2D(curve);
+		area.lineTo(toX(90), toY(0));
+		area.lineTo(toX(-90), toY(0));
+		area.closePath();
+		ctx.globalAlpha = 0.16;
+		ctx.fillStyle = color;
+		ctx.fill(area);
+		ctx.globalAlpha = 1;
+		ctx.strokeStyle = color;
+		ctx.lineWidth = 2;
+		ctx.stroke(curve);
+
+		// Peak marker and label
+		var peakX = toX(b.theta), peakY = toY(pdf(b.theta));
+		ctx.setLineDash([3, 3]);
+		ctx.lineWidth = 1;
+		line(ctx, peakX, peakY, peakX, pad.top + plotH);
+		ctx.setLineDash([]);
+		labels.push({text: "N" + node.id + " " + b.confidence.toFixed(2), x: peakX, y: Math.max(peakY - 7, 14), color: color});
+	});
+
+	// Peak labels, nudged up when two would overlap
+	ctx.font = "600 12px " + CANVAS_SANS;
+	ctx.textAlign = 'center';
+	labels.sort(function(a, b) { return a.x - b.x; });
+	labels.forEach(function(l, i) {
+		l.w = ctx.measureText(l.text).width + 8;
+		for (var j = 0; j < i; j++) {
+			var o = labels[j];
+			if (Math.abs(o.x - l.x) < (o.w + l.w) / 2 && Math.abs(o.y - l.y) < 14) {
+				l.y = (o.y - 15 >= 12) ? o.y - 15 : o.y + 15;   // above if there is room, else below
+			}
+		}
+		l.x = Math.min(Math.max(l.x, l.w / 2), w - l.w / 2);
+		ctx.fillStyle = l.color;
+		ctx.fillText(l.text, l.x, Math.max(l.y, missing.length > 0 ? 30 : 12));
+	});
+	ctx.font = "12px " + CANVAS_FONT;
+
+	// Nodes with no curve, top left
+	ctx.textAlign = 'left';
+	var noteX = pad.left;
+	missing.forEach(function(n) {
+		var text = "N" + n.id + ": confidence 0";
+		ctx.fillStyle = nodeColor(n.id);
+		ctx.fillText(text, noteX, 15);
+		noteX += ctx.measureText(text).width + 16;
+	});
 }
 
 // Square view that fits the triangle with padding; fixed so the map doesn't jump
@@ -360,20 +689,35 @@ function makeView(size) {
 
 function drawGrid(ctx, size) {
 	ctx.lineWidth = 1;
-	ctx.strokeStyle = colors['map-grid'];
 	ctx.fillStyle = colors['map-label'];
-	ctx.font = "11px system-ui, sans-serif";
-	var first = Math.ceil(view.left / GRID_STEP_M) * GRID_STEP_M;
-	for (var x = first; x <= view.left + view.span; x += GRID_STEP_M) {
+	ctx.font = "12px " + CANVAS_FONT;
+	var labelAll = GRID_STEP_M * view.scale >= GRID_LABEL_MIN_PX;
+	// Label every major line, or every other one when they would crowd (small screens)
+	var labelEvery = GRID_MAJOR_EVERY * (GRID_STEP_M * GRID_MAJOR_EVERY * view.scale >= 44 ? 1 : 2);
+	// Whole-number line indices so 0.1 steps don't pile up rounding error
+	var first = Math.ceil(view.left / GRID_STEP_M - 1e-9);
+	var last = Math.floor((view.left + view.span) / GRID_STEP_M + 1e-9);
+	for (var i = first; i <= last; i++) {
+		var x = i * GRID_STEP_M;
+		var isMajor = i % GRID_MAJOR_EVERY === 0;
 		var px = Math.round(view.toCanvas(x, 0).x) + 0.5;
+		ctx.strokeStyle = colors[isMajor ? 'map-grid-major' : 'map-grid'];
 		line(ctx, px, 0, px, size);
-		ctx.fillText(x.toFixed(1), px + 3, size - 5);
+		if (labelAll || i % labelEvery === 0) {
+			ctx.fillText(x.toFixed(1), px + 3, size - 5);
+		}
 	}
-	first = Math.ceil(view.bottom / GRID_STEP_M) * GRID_STEP_M;
-	for (var y = first; y <= view.bottom + view.span; y += GRID_STEP_M) {
+	first = Math.ceil(view.bottom / GRID_STEP_M - 1e-9);
+	last = Math.floor((view.bottom + view.span) / GRID_STEP_M + 1e-9);
+	for (var j = first; j <= last; j++) {
+		var y = j * GRID_STEP_M;
+		var isMajorY = j % GRID_MAJOR_EVERY === 0;
 		var py = Math.round(view.toCanvas(0, y).y) + 0.5;
+		ctx.strokeStyle = colors[isMajorY ? 'map-grid-major' : 'map-grid'];
 		line(ctx, 0, py, size, py);
-		ctx.fillText(y.toFixed(1) + " m", 4, py - 4);
+		if ((labelAll || j % labelEvery === 0) && py < size - 24) {   // keep clear of the x labels
+			ctx.fillText(y.toFixed(1) + " m", 4, py - 4);
+		}
 	}
 }
 
@@ -454,8 +798,8 @@ function drawEstimate(ctx, fix) {
 	ctx.stroke();
 	ctx.fill();
 	if (!fix.position.in_front) {
-		ctx.fillStyle = colors['heat-1'];
-		ctx.font = "bold 13px system-ui, sans-serif";
+		ctx.fillStyle = colors.problem;
+		ctx.font = "600 15px " + CANVAS_SANS;
 		ctx.fillText("?", p.x + 10, p.y - 8);
 	}
 }
@@ -483,7 +827,7 @@ function drawNode(ctx, node) {
 	          p.x + 20 * Math.cos(heading), p.y - 20 * Math.sin(heading));
 
 	ctx.fillStyle = color;
-	ctx.font = "bold 11px system-ui, sans-serif";
+	ctx.font = "600 12px " + CANVAS_SANS;
 	ctx.textAlign = "center";
 	ctx.textBaseline = "middle";
 	ctx.fillText("N" + node.id, p.x, p.y + 0.5);
@@ -493,16 +837,16 @@ function drawNode(ctx, node) {
 
 /* ---------- heat map ---------- */
 
-function drawHeat(ctx, fix) {
+function drawHeat(ctx, fix, cache) {
 	var key = fix.id + "|" + view.size + "|" + view.left + "|" + view.bottom + "|" + view.span;
-	if (key !== heatKey) {
-		heatKey = key;
-		buildHeat(fix);
+	if (key !== cache.key) {
+		cache.key = key;
+		buildHeat(fix, cache.canvas);
 	}
 	ctx.save();
-	ctx.globalCompositeOperation = 'lighter';
+	ctx.globalCompositeOperation = 'multiply';   // light map: the colours darken the paper
 	ctx.imageSmoothingEnabled = true;
-	ctx.drawImage(heatCanvas, 0, 0, view.size, view.size);
+	ctx.drawImage(cache.canvas, 0, 0, view.size, view.size);
 	ctx.restore();
 }
 
@@ -510,7 +854,7 @@ function drawHeat(ctx, fix) {
 // Each line counts as a Gaussian in angle, HEAT_SIGMA_DEG wide at confidence 1
 // and wider when the node is less sure. Multiplying them leaves the region where
 // every line points at once. Brightness is relative to the best cell.
-function buildHeat(fix) {
+function buildHeat(fix, heatCanvas) {
 	heatCanvas.width = HEAT_CELLS;
 	heatCanvas.height = HEAT_CELLS;
 	var hctx = heatCanvas.getContext('2d');
@@ -519,7 +863,7 @@ function buildHeat(fix) {
 	var lines = [];
 	fix.bearings.forEach(function(b) {
 		var node = nodesById[b.node];
-		if (node) {
+		if (node && b.confidence > 0) {
 			var sigma = HEAT_SIGMA_DEG / Math.max(b.confidence, HEAT_MIN_CONFIDENCE);
 			lines.push({x: node.x, y: node.y, bearing: b.bearing, k: 1 / (2 * sigma * sigma)});
 		}
@@ -553,15 +897,16 @@ function buildHeat(fix) {
 		}
 	}
 
-	var low = hexToRgb(colors['heat-1']);
-	var high = hexToRgb(colors['heat-2']);
+	// Yellow (weak) -> orange -> red (where the lines agree best)
+	var ramp = [hexToRgb(colors['heat-low']), hexToRgb(colors['heat-mid']), hexToRgb(colors['heat-high'])];
 	for (var j = 0; j < scores.length; j++) {
 		var v = Math.exp(scores[j] - best);     // 1 where the lines agree best
+		var c = rampColor(ramp, v);
 		var px = j * 4;
-		image.data[px]     = low.r + (high.r - low.r) * v;
-		image.data[px + 1] = low.g + (high.g - low.g) * v;
-		image.data[px + 2] = low.b + (high.b - low.b) * v;
-		image.data[px + 3] = 220 * Math.pow(v, 0.6);
+		image.data[px]     = c.r;
+		image.data[px + 1] = c.g;
+		image.data[px + 2] = c.b;
+		image.data[px + 3] = 230 * Math.pow(v, 0.45);
 	}
 	hctx.putImageData(image, 0, 0);
 }
@@ -577,6 +922,15 @@ function line(ctx, x1, y1, x2, y2) {
 
 function wrapDeg(a) {
 	return ((a + 180) % 360 + 360) % 360 - 180;
+}
+
+// Colour at t (0 to 1) along evenly spaced stops
+function rampColor(stops, t) {
+	var x = Math.min(Math.max(t, 0), 1) * (stops.length - 1);
+	var i = Math.min(Math.floor(x), stops.length - 2);
+	var f = x - i;
+	var a = stops[i], b = stops[i + 1];
+	return {r: a.r + (b.r - a.r) * f, g: a.g + (b.g - a.g) * f, b: a.b + (b.b - a.b) * f};
 }
 
 function hexToRgb(hex) {
@@ -608,6 +962,44 @@ function formatDuration(ms) {
 	var m = Math.floor((total / 60) % 60);
 	var s = total % 60;
 	return h + ":" + pad2(m) + ":" + pad2(s);
+}
+
+// The master only says how long ago each sound was; turn that into a time once,
+// on first sight, so it doesn't jitter between polls
+function rememberDetectionTimes(list) {
+	var now = nowMs();
+	var keep = {};
+	list.forEach(function(fix) {
+		keep[fix.id] = detectedAt[fix.id] !== undefined ? detectedAt[fix.id] : now - fix.age_ms;
+	});
+	fixes.forEach(function(fix) {      // the ones on screen, in case we are paused
+		if (keep[fix.id] === undefined && detectedAt[fix.id] !== undefined) {
+			keep[fix.id] = detectedAt[fix.id];
+		}
+	});
+	detectedAt = keep;
+}
+
+// Clock, plus every "s ago" on the page
+function updateTimes() {
+	var now = nowMs();
+	setText('clock', formatClock(now));
+	document.querySelectorAll('[data-at]').forEach(function(el) {
+		el.textContent = formatAge(now - Number(el.dataset.at));
+	});
+}
+
+function nowMs() {
+	return Date.now() + clockOffsetMs;
+}
+
+// HH:MM:SS at DISPLAY_UTC_OFFSET_H. Done by hand so the viewer's own time zone
+// settings can't change it.
+function formatClock(ms) {
+	var d = new Date(ms + DISPLAY_UTC_OFFSET_H * 3600000);
+	return [d.getUTCHours(), d.getUTCMinutes(), d.getUTCSeconds()].map(function(n) {
+		return (n < 10 ? "0" : "") + n;
+	}).join(":");
 }
 
 function formatAge(ms) {
@@ -642,12 +1034,8 @@ function clearServerTimeout() {
 
 function errorHandler(message) {
 	console.log("ERROR: " + message);
-	setText('error-text', message);
+	setText('error-text', String(message).replace(/^(SERVER )?ERROR:\s*/, ""));
 	setLinkState(false);
 	document.getElementById('error-box').hidden = false;
-	window.clearTimeout(hideErrorTimeout);
-	hideErrorTimeout = window.setTimeout(function() {
-		document.getElementById('error-box').hidden = true;
-	}, ERROR_SHOW_MS);
 	clearServerTimeout();
 }

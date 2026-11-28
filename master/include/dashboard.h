@@ -17,7 +17,7 @@
 #include <stdint.h>
 
 #define DASHBOARD_MAX_NODES 8
-#define DASHBOARD_FIX_HISTORY 8
+#define DASHBOARD_FIX_HISTORY 10
 
 /**
  * @brief One node's direction line within a fix

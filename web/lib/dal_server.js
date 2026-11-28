@@ -7,6 +7,7 @@
 //   'sound'         "sound"       'sound-reply' (demo mode: fake a sound now)
 //   'stop'          "stop"        'stop-reply'
 //   'read-uptime'   (reads /proc/uptime)  'uptime-reply'
+//   'read-time'     (this machine's clock) 'time-reply' (ms since 1970, UTC)
 // Any failure is sent to the browser as 'master-error'.
 
 var fs       = require('fs');
@@ -29,6 +30,9 @@ function handleCommands(socket) {
 
 	socket.on('read-uptime', function() {
 		readAndSendFile(socket, '/proc/uptime', 'uptime-reply');
+	});
+	socket.on('read-time', function() {
+		socket.emit('time-reply', Date.now());
 	});
 	socket.on('status', function() {
 		relayToMaster(socket, "status", "status-reply");
