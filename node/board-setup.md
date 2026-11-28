@@ -52,7 +52,7 @@ sudo systemctl restart chrony
 |--------------------------|--------------|
 | `^?` and `Reach 0` in `chronyc sources` | chrony has never heard back from the master. Check the network first. |
 | `eth0` has only an `fe80::` address | No static address (see Network above). |
-| `ping 192.168.10.1` says `Destination Host Unreachable` and `ip neigh` shows `192.168.10.1 INCOMPLETE` | The node's side is fine, but nothing on the switch answers for 192.168.10.1. The master is off, unplugged, or doesn't have that address on its Ethernet port. |
+| `ping 192.168.10.1` says `Destination Host Unreachable` and `ip neigh` shows `192.168.10.1 INCOMPLETE` | The node's side is fine, but nothing on the switch answers for 192.168.10.1. The master is off, unplugged, or doesn't have that address on its Ethernet port (see `master/board-setup.md`). |
 | `ping` works but `Reach` stays at 0 | The master's chrony isn't running, its `allow` line doesn't cover the node, or a firewall is blocking UDP port 123. |
 | The ssh session over USB freezes when Ethernet is plugged in | The board dropped off the laptop's USB bus (it vanished from `lsusb`). The cause isn't confirmed yet (most likely a power brownout from running the board off a laptop port). `Enter`, `~`, `.` kills the frozen session. |
 
