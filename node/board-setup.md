@@ -46,6 +46,31 @@ sudo rm /etc/chrony/conf.d/acoustic-master.conf
 sudo systemctl restart chrony
 ```
 
+## Running the Node With a Replay
+
+A replay plays a recording through the detector and estimator instead of the mics, so it tests the whole node without any hardware.
+It also doesn't need `sudo` (it never touches the R5).
+Build on the laptop and make a synthetic recording (it prints the angle each burst should give):
+
+```sh
+cmake -S . -B build -DCMAKE_TOOLCHAIN_FILE=aarch64-toolchain.cmake
+cmake --build build
+python3 dsp/tools/make_replay.py replay.csv
+```
+
+Copy both to the node (or use the NFS share if it's mounted) and point the node at the master:
+
+```sh
+scp build/node/node replay.csv ztomas@192.168.7.2:acoustic/
+cd ~/acoustic
+DSP_REPLAY=replay.csv DSP_VERBOSE=1 ./node 1 192.168.10.1
+```
+
+The first argument is the node ID and the port defaults to 35100 (same as the master).
+With `DSP_VERBOSE=1` every window is printed, and the angles should match what `make_replay.py` printed (0, ±14.9, ±31.0, and ±50.5 degrees).
+The recording loops, so the same seven bursts repeat every 5.2 s.
+Drop `DSP_VERBOSE` once it works, since the 10 s summary is enough.
+
 ## Troubleshooting
 
 | What you see on the node | Likely cause |
@@ -62,5 +87,14 @@ sudo systemctl restart chrony
 
 - `eth0` had no IPv4 address, so `chronyc sources` showed `^?` with `Reach 0`. Added the drop-in above and `eth0` now has 192.168.10.11/24.
 - Removed the stray `acoustic-master.conf`.
-- Still not synced. The node's ARP request for 192.168.10.1 gets no answer (`INCOMPLETE`), so the problem is now on the master's side of the switch.
-- The node's clock was roughly 14 minutes behind the laptop. `makestep 1 -1` should jump it once chrony syncs.
+- Still not synced at first. The node's ARP request for 192.168.10.1 got no answer (`INCOMPLETE`), so the problem was on the master's side of the switch.
+- After the master was fixed, ping to 192.168.10.1 (jah28-beagle) worked with about 0.4 ms round trip.
+- chrony then picked the master and stepped the node's clock by 836.5 s (it had been roughly 14 minutes behind).
+- Synced: `^*` with `Reach 377`, `System clock synchronized: yes`, and the node within about 1.4 µs of the master (`chronyc tracking`).
+- The master was at stratum 3 (so it was following internet time servers when this was tested), which puts the node at stratum 4.
+
+The `+/- 38ms` that `chronyc sources` shows is chrony's worst case all the way back to the internet servers (most of it is the master's 70 ms root delay).
+For the project only the offset between node and master matters, and that's the microsecond figure from `chronyc tracking`.
+
+Later the same day, the node ran with a synthetic replay (`make_replay.py`, built from `ff04416`).
+All 14 windows in the first 12 s came out at the expected angles with nothing refused, and the node connected to the master as node 1.
