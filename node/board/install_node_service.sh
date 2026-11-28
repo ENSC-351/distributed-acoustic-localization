@@ -31,7 +31,8 @@ EOF
 
 systemctl daemon-reload
 systemctl enable acoustic-node
-if pgrep -x node >/dev/null; then
+# Match "node <ID> ..." only: the board's code-server also runs a process called node (Node.js)
+if pgrep -f '(^|/)node [0-9]+ ' >/dev/null; then
   echo "Installed, but a node is already running by hand. Stop it, then: sudo systemctl start acoustic-node"
 else
   systemctl start acoustic-node && echo "Installed and started. Follow it with: journalctl -u acoustic-node -f"
