@@ -77,3 +77,67 @@ pipeline_cli rec.csv hp=500 threshold=300 holdoff_ms=300 pre_ms=2 post_ms=5 min_
 | `node/board/record_claps.sh` | Guided raw recording on the board |
 | `node/board/node_r5_test.sh` | Live node + master on the board (`replay`, `silence`, `taps`) |
 | Node `DSP_*` variables | Change any setting live without rebuilding (`node/README.md`) |
+
+## Node calibration (per node, ~5 min; do before triangle accuracy tests)
+
+Measured from a marked-position recording (`node/board/record_marks.sh`, **soft claps** so
+nothing clips; −90 on the mic A / left side looking out from the node), analysed with
+`dsp/tools/fit_marks.py`, which fits `lag = slope·sin(mark) + intercept`:
+
+| Parameter | From | Setting | Madden's node (2026-11-28, claps) |
+|---|---|---|---|
+| Effective spacing | `|slope|·c/fs` | `DSP_MIC_SPACING_M` | 4.6 cm (ruler: 6.5 cm) |
+| Timing offset beyond the R5 skew | `intercept + skew` | needs a `DSP_SKEW_OFFSET_US` option (not written yet) | −11 µs |
+| Orientation | slope sign / scratch test | `DSP_SWAP_MICS` | correct (A = ch0 = left) |
+| Mounting angle in the triangle | clap at the centre: each node should read 0° | per-node heading in `master/src/layout.c` | not measured |
+| Position | tape measure | `LAYOUT_SIDE_M`, `layout.c` | not measured |
+
+Always confirm on a **second, fresh** recording: fitting and scoring on the same data is optimistic.
+
+Why accuracy is what it is: `Δθ ≈ c·Δτ / (d·cos θ)`. Madden's claps: Δτ ≈ 0.43 samples
+(21 µs), d = 4.6 cm → ~9° at broadside, close to the measured 11.6° mean. Levers: smaller Δτ
+(cleaner signal, better DSP, below) or larger d (wider spacing: 10 cm ≈ 2× better, 27 cm ≈ 6×).
+
+## Node-side DSP improvements: nice to have, after the triangle tests
+
+Scored offline on recordings with known truth before any default changes; each change behind
+a `DSP_*` setting. Baseline: claps on Madden's node, 11.6° mean |error| at 4.6 cm.
+
+**0. Benchmark first.** One command that runs the node DSP over every recording with truth
+(clap marks, tap marks, synthetic marks, Tyler's files) and prints mean/RMS error, accepted %,
+false triggers. Extend `dsp/tools/analyze_marks.py`.
+
+**1. Signal conditioning**
+- Band-pass (≈500 Hz-5 kHz) instead of the 500 Hz high-pass: keeps the timing band, drops
+  ch0's 7.2 kHz tone and broadband noise.
+- Clipping handling: correlate only up to the first clipped sample, or drop clipped samples
+  (every clap clipped at ~3300 counts).
+- Per-channel normalisation by each channel's calibrated noise level (ch0 is 10× noisier on
+  Joey's board).
+- Optional notch for a known tone (board-specific).
+
+**2. Detection**
+- Per-channel normalised trigger energy.
+- Precise onset per window (energy rise / threshold crossing, ~0.1 ms), instead of a fixed
+  2 ms before the trigger point.
+- Adaptive noise floor while idle.
+
+**3. Delay estimation (main lever)**
+- a. Upsampled / sinc-interpolated correlation peak: removes the parabola bias (~2° at ±60°
+  on clean data). `fit_marks.py` already does this offline.
+- b. Direct-path window: onset → +1.5-2 ms, Hann taper; fewer reflections in the estimate.
+- c. Second estimator: onset-time difference between channels (survives echoes and clipping);
+  agree → accept, disagree → flag/refuse.
+- d. Band-limited GCC-PHAT or SCOT/ML weighting using the calibrated noise spectrum.
+- e. Search only the physical lag range; a stronger peak outside it becomes a warning, not a
+  refusal (16 of 24 taps refused this way on Madden's board, often with plausible in-range lags).
+- f. Calibrated timing offset (`DSP_SKEW_OFFSET_US`).
+
+**4. Confidence and output**
+- A confidence that works at 6.5 cm (it is ~1.00 on every tap now): peak sharpness,
+  agreement of 3a/3c, clipping and noise flags.
+- Fill `dominant_freq_hz` for cross-node matching.
+
+Suggested order: 0 → 3a → 3b (with 2's onset) → 1 (clipping, band-pass) → 3e → 3c → 4.
+Ownership: 3a/3d/3e touch `dsp/tdoa.c` (agree with its author, or add as non-default
+options); detector changes past Tyler.
