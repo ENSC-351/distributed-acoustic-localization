@@ -60,3 +60,20 @@ Node DSP on the claps (`analyze_marks.py`, channels swapped offline):
 | Swapped, 4.6 cm (spacing fitted on this same recording: optimistic) | 11.6° | 15.7° | 37.9° |
 
 Per-mark means with swap + 4.6 cm: −86.7, −77.7, −37.7, −8.7, +22.2, +63.3, +56.2 (true −90…+90).
+
+## Correction: the marks were mirrored, not the wiring (`ch0check`)
+Scratching the **left** mic (facing out from the node toward 0°) raised ch0 only (1.4-1.5×
+over 3-5 s; ch1 flat). So ch0 = mic A is on the left, as the convention wants, and the wiring
+is correct. The "reversed sign" above came from the tape: −90 was placed on the mic B side.
+Re-analysis with the mark labels negated (channels untouched, so the skew correction stays
+right): fits and errors unchanged in size, sign OK.
+
+| Recording, node DSP | Spacing | Mean abs error | RMS | Max |
+|---|---|---|---|---|
+| Claps | 6.5 cm | 20.5° | 25.9° | 56.1° |
+| Claps | 4.6 cm (fitted on this recording) | 11.6° | 15.7° | 37.9° |
+| Taps on the table | 6.5 cm | 26.8° | 34.2° | 66.6° |
+| Taps on the table | 4.6 cm | 21.7° | 28.2° | 65.1° |
+
+Claps, 4.6 cm, per-mark means (true −90…+90): −56.2, −63.3, −22.2, +8.7, +37.7, +77.7, +86.7.
+The weak side is the **mic A side** (−90 reads −56). No `DSP_SWAP_MICS` needed.
