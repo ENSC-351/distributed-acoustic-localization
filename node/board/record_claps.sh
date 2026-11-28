@@ -7,7 +7,11 @@
 # (not /tmp: root may not overwrite another user's file there).
 [ "$(id -u)" = 0 ] || { echo "run with sudo"; exit 1; }
 cd "$(dirname "$0")" || exit 1
-NAME=${1:-claps}_$(date +%H%M%S)
+# Output goes next to this script, unless root can't write here (NFS share with
+# root_squash): then to /tmp. Set OUTDIR to choose.
+OUTDIR=${OUTDIR:-$PWD}
+touch "$OUTDIR/.w$$" 2>/dev/null && rm -f "$OUTDIR/.w$$" || OUTDIR=/tmp
+NAME=$OUTDIR/${1:-claps}_$(date +%H%M%S)
 [ -x ./r5cap_ring_read ] || { echo "r5cap_ring_read missing here"; exit 1; }
 ./r5cap_ctl status | grep -q 'running rate' || ./r5_start.sh || exit 1
 
@@ -30,5 +34,5 @@ done
 say "quiet until the end..."
 wait $REC
 chown --reference=. $NAME.wav $NAME.txt 2>/dev/null   # yours, not root's
-echo "done: $PWD/$NAME.wav ($(stat -c %s $NAME.wav) bytes), $NAME.txt"
+echo "done: $NAME.wav ($(stat -c %s $NAME.wav) bytes), $NAME.txt"
 grep -E 'frames|rate|late|error|offset' $NAME.txt | head -8

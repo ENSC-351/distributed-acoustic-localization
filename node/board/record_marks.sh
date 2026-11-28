@@ -10,10 +10,14 @@
 # marks_<time>.wav/.txt/.labels next to this script.
 [ "$(id -u)" = 0 ] || { echo "run with sudo"; exit 1; }
 cd "$(dirname "$0")" || exit 1
+# Output goes next to this script, unless root can't write here (NFS share with
+# root_squash): then to /tmp. Set OUTDIR to choose.
+OUTDIR=${OUTDIR:-$PWD}
+touch "$OUTDIR/.w$$" 2>/dev/null && rm -f "$OUTDIR/.w$$" || OUTDIR=/tmp
 TAPS=${1:-5}
 shift 2>/dev/null
 MARKS=${*:--90 -60 -30 0 30 60 90}
-NAME=marks_$(date +%H%M%S)
+NAME=$OUTDIR/marks_$(date +%H%M%S)
 GAP=2        # seconds between taps
 MOVE=4       # seconds to move to the next mark
 [ -x ./r5cap_ring_read ] || { echo "r5cap_ring_read missing here"; exit 1; }
@@ -42,5 +46,5 @@ done
 echo "done tapping, quiet until the end..."
 wait $REC
 chown --reference=. $NAME.* 2>/dev/null
-echo "saved: $PWD/$NAME.wav ($(stat -c %s $NAME.wav) bytes), $NAME.txt, $NAME.labels"
+echo "saved: $NAME.wav ($(stat -c %s $NAME.wav) bytes), $NAME.txt, $NAME.labels"
 grep -E 'blocks_skipped|late|adc_errors' $NAME.txt
