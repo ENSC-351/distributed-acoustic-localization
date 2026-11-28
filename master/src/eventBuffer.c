@@ -16,7 +16,10 @@
 #include <stdatomic.h>
 
 #define EVENT_BUFFER_CAPACITY 64
-#define EVENT_BUFFER_CLOCK CLOCK_REALTIME //using CLOCK_MONOTONIC might be better
+// Clock for the timed wait. Monotonic, because chrony can step CLOCK_REALTIME,
+// which would end the wait early or stretch it. The condition variable and the
+// deadline must use the same clock (see EventBuffer_init()).
+#define EVENT_BUFFER_CLOCK CLOCK_MONOTONIC
 
 #define NS_PER_MS 1000000LL
 #define NS_PER_S  1000000000LL
