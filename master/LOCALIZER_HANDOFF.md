@@ -123,7 +123,7 @@ and ARM builds pass; unit tests pass (detector 8,880 checks, R5 backend 52, esti
 ### Checklist to get everything into `main`
 | # | Step | Who | Status |
 |---|---|---|---|
-| 1 | Fix the conflict markers in `eventBuffer.c` and push | Zur | ☐ |
+| 1 | Fix the conflict markers in `eventBuffer.c` and push | Madden (Zur agreed) | ✅ fixed on local branch `zta32/fix-eventbuffer-markers` (`eeafa31`); builds, buffer receives events. ☐ push |
 | 2 | Decide who writes the localizer | Zur + Madden | ☐ |
 | 3 | Push `madden/node-integration`; Jack reviews `node/src/dspLink.c` | Madden, Jack | ☐ (ready to push) |
 | 4 | Merge EventBuffer + web-gui into the integration branch; one `main.c` | Madden | ☐ |
