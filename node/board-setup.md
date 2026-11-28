@@ -267,3 +267,12 @@ Node on Tyler's board (hostname BeagleBone), 2026-11-28:
 
 - Debian 13.7, kernel 7.2.9-arm64-k3-r19. `eth0` already had 192.168.10.13 and chrony was synced to the master (`^*`, `Reach 377`, about 3.5 µs off).
 - The boot config used Tyler's own bit-banged overlay (`beagley-spi0-local.dtbo`, driver `spi-gpio`), so `mcspi_power_on.sh` can't find MCU_SPI0 and the R5 can't sample until the overlay is swapped.
+
+Node on Joey's board (jkolsteren-beagle), 2026-11-28:
+
+- Debian 13.7, kernel 7.2.8-arm64-k3-r18. The `mcu-spi0-adc` overlay was already active and chrony was synced to the master.
+- Its `eth0` drop-in had 192.168.10.11 (the same as zta32), so it moves to .14 as node 4.
+- The USB link failed at first: the laptop got a DHCP lease from the board, but ping and ssh gave `No route to host` and the laptop's send and receive error counters kept climbing (`/sys/class/net/<interface>/statistics/`). It worked a few minutes later (not yet known whether replugging the cable is what fixed it).
+- The login name is `Joey`, with a capital J (the ssh banner shows it as `default username is [Joey]`).
+- Moved to 192.168.10.14 and installed the service as node 4. It started the R5 (20,000 frames/s), chrony's `waitsync` passed on the first try, and the node connected to the master as node 4.
+- In the first two minutes 18 windows were detected and 9 were sent. The other 9 were refused with `strongest peak outside physical range`.
