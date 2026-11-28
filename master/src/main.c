@@ -5,6 +5,7 @@
 #include "common/protocol.h"
 #include "common/shutdown.h"
 #include "master/eventBuffer.h"
+#include "master/localizer.h"
 #include "master/netServer.h"
 #include <errno.h>
 #include <stdbool.h>
@@ -32,6 +33,8 @@ int main(int argc, char *argv[])
 	Shutdown_init();
 	// The event buffer must exist before the threads that use it start
 	EventBuffer_init();
+	// The localizer takes from the buffer, so start it before events arrive
+	Localizer_init();
 	NetServer_init(port);
 
 	// Wait for Ctrl+C or SIGTERM
@@ -40,6 +43,7 @@ int main(int argc, char *argv[])
 	// Stop in the reverse order, so no module is still using one that has
 	// already stopped (the server stops adding events before the buffer goes)
 	NetServer_cleanup();
+	Localizer_cleanup();
 	EventBuffer_cleanup();
 	Shutdown_cleanup();
 	return EXIT_SUCCESS;
