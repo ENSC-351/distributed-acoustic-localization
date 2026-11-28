@@ -128,7 +128,7 @@ and ARM builds pass; unit tests pass (detector 8,880 checks, R5 backend 52, esti
 | 3 | Push `madden/node-integration`; Jack reviews `node/src/dspLink.c` | Madden, Jack | ☐ (ready to push) |
 | 4 | Merge EventBuffer + web-gui into the integration branch; one `main.c` | Madden | ☐ |
 | 5 | Write `localizer.c` | Zur or Madden | ☐ |
-| 6 | VM test: 3 replay nodes (IDs 1-3) with audio for a sound at a chosen (x, y) → master → GUI dot at that spot | Madden | ☐ (tool to be written) |
+| 6 | VM test: 3 replay nodes (IDs 1-3) with audio for a sound at a chosen (x, y) → master → GUI dot at that spot | Madden | 🟡 tool done (`dsp/tools/run_triangle_sim.sh`); nodes → master verified. Re-run once the localizer + fusion are in, and check the GUI dot |
 | 7 | One real node + master on separate machines | Madden / Joey | ☐ |
 | 8 | PRs to `main` in order: DSP estimator → R5/audio → node integration → EventBuffer → master + GUI + localizer | Each owner | ☐ |
 | 9 | Three real nodes, taps at marked spots; measure position error | Team | ☐ |
@@ -142,3 +142,14 @@ Critical path: 1 → 4 → 5 → 6. Steps 1 and 2 are the only ones waiting on a
   netServer → EventBuffer → localizer without any audio.
 - Real DSP without hardware: `DSP_REPLAY=replay.csv ./node 1 127.0.0.1` with a file from
   `dsp/tools/make_replay.py` (`node/README.md`).
+- **Three nodes, sounds at known positions** (the test for the localizer):
+  ```
+  dsp/tools/run_triangle_sim.sh <build dir> [spacing m] ["x,y x,y ..."]
+  ```
+  Generates each node's recording for sounds at the given map positions (same layout as
+  `layout.c`: side 2.0 m, node 1 top, mic B on the right), starts a master and nodes 1-3
+  together on localhost, and prints each node's theta error and the position from
+  intersecting the bearings. Needs numpy. Result on 2026-11-28 (synthetic, current master,
+  intersection done by the script): theta errors within about 1°, position error mean 1.5 cm
+  at 0.065 m spacing, 0.6 cm at 0.27 m. With your localizer + fusion running, the master
+  should locate the same positions (and the GUI show them).
