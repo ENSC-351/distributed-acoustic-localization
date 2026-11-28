@@ -29,6 +29,8 @@ sudo systemctl restart systemd-networkd
 ```
 
 Use the node's own address from the network plan (.11 to .14).
+Every node needs a different one, so check `ip -br addr show eth0` on each board before plugging it into the switch.
+Two boards with the same address fight over it, and the master's replies end up at whichever board answered last.
 DHCP stays on as well, so the board still gets an address on a normal network.
 To undo it, delete `acoustic.conf` and restart systemd-networkd.
 
@@ -71,6 +73,50 @@ With `DSP_VERBOSE=1` every window is printed, and the angles should match what `
 The recording loops, so the same seven bursts repeat every 5.2 s.
 Drop `DSP_VERBOSE` once it works, since the 10 s summary is enough.
 
+## Building for Older Boards
+
+Not every board runs the same image.
+Madden's board runs Debian 12 with the TI 6.1 kernel, so it only has glibc 2.36, and a node built on the laptop (Debian 13) won't start there.
+A static build carries its own copy of the C library, so it runs on either image:
+
+```sh
+cmake -S . -B build-static -DCMAKE_TOOLCHAIN_FILE=aarch64-toolchain.cmake -DCMAKE_EXE_LINKER_FLAGS=-static
+cmake --build build-static --target node
+```
+
+Check what a board has with `cat /etc/debian_version` and `ldd --version`.
+
+## Starting at Boot
+
+`node/board/acoustic-node.service` starts the R5 and then the node at boot, and restarts the node if it crashes.
+`install_node_service.sh` installs it (copy both to the board along with the node and the R5 files):
+
+```sh
+scp build-static/node/node node/board/acoustic-node.service node/board/install_node_service.sh \
+    r5capture/board/r5_start.sh r5capture/board/mcspi_power_on.sh \
+    r5capture/prebuilt/r5capture-mcspi.elf r5capture/prebuilt/r5cap_ctl \
+    madden@192.168.7.2:acoustic/service/
+```
+
+Then on the board (stop any node you started by hand first, or the two will fight over the same ID):
+
+```sh
+cd ~/acoustic/service
+sudo ./install_node_service.sh 2 0.065           # node ID, mic spacing in m, [master IP]
+journalctl -u acoustic-node -f                   # follow its output
+```
+
+It copies everything to `/opt/acoustic-node` and puts the settings in `/etc/default/acoustic-node`.
+Any `DSP_*` variable can go in that file too (run `sudo systemctl restart acoustic-node` after editing it).
+To update the node binary, copy the new one over and run the install script again.
+
+A few choices in the service file are worth knowing about:
+
+- It doesn't wait for `network-online.target`. `eth0` keeps asking for DHCP on the project switch and never counts as online, so that would hold boot up for 2 minutes. The node retries the master every second anyway.
+- It waits up to a minute for chrony to sync to the master (`chronyc waitsync`), so the first events have usable times. If chrony can't sync it starts the node anyway.
+- If `r5_start.sh` fails (no overlay, for example) the service tries 5 times and then gives up. `systemctl status acoustic-node` shows why.
+- A node that gets kicked off because another node has its ID exits cleanly, so systemd doesn't restart it.
+
 ## Troubleshooting
 
 | What you see on the node | Likely cause |
@@ -80,6 +126,7 @@ Drop `DSP_VERBOSE` once it works, since the 10 s summary is enough.
 | `ping 192.168.10.1` says `Destination Host Unreachable` and `ip neigh` shows `192.168.10.1 INCOMPLETE` | The node's side is fine, but nothing on the switch answers for 192.168.10.1. The master is off, unplugged, or doesn't have that address on its Ethernet port (see `master/board-setup.md`). |
 | `ping` works but `Reach` stays at 0 | The master's chrony isn't running, its `allow` line doesn't cover the node, or a firewall is blocking UDP port 123. |
 | The ssh session over USB freezes when Ethernet is plugged in | The board dropped off the laptop's USB bus (it vanished from `lsusb`). The cause isn't confirmed yet (most likely a power brownout from running the board off a laptop port). `Enter`, `~`, `.` kills the frozen session. |
+| `version 'GLIBC_2.38' not found (required by ./node)` | The board runs Debian 12 (glibc 2.36) and the laptop's cross-compiler links against Debian 13's newer glibc. Build a static node instead (see Building for Older Boards). |
 
 ## Status Log
 
@@ -98,3 +145,10 @@ For the project only the offset between node and master matters, and that's the 
 
 Later the same day, the node ran with a synthetic replay (`make_replay.py`, built from `ff04416`).
 All 14 windows in the first 12 s came out at the expected angles with nothing refused, and the node connected to the master as node 1.
+
+Node madden-byai, 2026-11-28:
+
+- Debian 12.15, glibc 2.36, kernel 6.1.83-ti-arm64-r71. The R5 was already running and `r5_start.sh` started sampling at 20,000 frames/s.
+- The laptop build failed with `GLIBC_2.38 not found`. A static build (above) starts fine.
+- chrony was already synced to the master (`^*`, `Reach 377`, about 4 µs off).
+- Its `eth0` drop-in had 192.168.10.11, the same address as zta32, so it needs to move to .12.

@@ -1,0 +1,30 @@
+# Starts the R5 sampler and the node at boot. Installed by install_node_service.sh.
+# Settings (node ID, master IP, DSP_* variables) are in /etc/default/acoustic-node.
+#   journalctl -u acoustic-node -f      follow the node's output
+#   systemctl status acoustic-node      is it running, and why did it stop
+
+[Unit]
+Description=Acoustic localization node (R5 sampler and node)
+# No network-online.target: eth0's DHCP never finishes on the project switch, so
+# waiting for it would hold up boot for 2 minutes. The node retries the master
+# every second until it connects anyway.
+After=network.target chrony.service
+Wants=chrony.service
+# Give up after 5 failed starts in 5 minutes (a missing overlay won't fix itself)
+StartLimitIntervalSec=300
+StartLimitBurst=5
+
+[Service]
+EnvironmentFile=/etc/default/acoustic-node
+WorkingDirectory=/opt/acoustic-node
+ExecStartPre=/opt/acoustic-node/r5_start.sh
+# Wait up to a minute for chrony to sync to the master (within 1 ms), so the
+# first events have usable times. The leading '-' starts the node anyway if it doesn't.
+ExecStartPre=-/usr/bin/chronyc waitsync 6 0.001
+ExecStart=/opt/acoustic-node/node ${NODE_ID} ${MASTER_IP}
+# The node exits cleanly (no restart) if another node has its ID
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
