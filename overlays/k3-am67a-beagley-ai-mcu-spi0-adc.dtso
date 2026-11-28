@@ -1,0 +1,36 @@
+// SPDX-License-Identifier: GPL-2.0-only OR MIT
+// Hardware SPI (MCU_SPI0) for the MCP3208 on the BeagleY-AI header.
+// Replaces the bit-banged spidev0 overlays: same pins, so no rewiring.
+// Load only ONE of them at a time.
+/dts-v1/;
+/plugin/;
+
+// Pad values: 0x00010000 = output, no pull; 0x00050000 = input, no pull.
+// Low bits are the mux mode: 0 = MCU_SPI0 (7 would be GPIO).
+&mcu_pmx0 {
+	adc_spi0_pins: adc-spi0-default-pins {
+		pinctrl-single,pins = <
+			0x00 0x00010000	/* hat 24 CS0 */
+			0x08 0x00050000	/* hat 23 CLK: input enabled, the controller
+					   samples MISO using the clock read back from the pad */
+			0x0c 0x00010000	/* hat 19 D0 = MOSI */
+			0x10 0x00050000	/* hat 21 D1 = MISO */
+		>;
+	};
+};
+
+&mcu_spi0 {
+	status = "okay";
+	#address-cells = <1>;
+	#size-cells = <0>;
+	pinctrl-names = "default";
+	pinctrl-0 = <&adc_spi0_pins>;
+	ti,spi-num-cs = <1>;
+	ti,pindir-d0-out-d1-in;
+
+	adc@0 {
+		compatible = "rohm,dh2228fv";	/* binds spidev */
+		reg = <0>;
+		spi-max-frequency = <2000000>;
+	};
+};

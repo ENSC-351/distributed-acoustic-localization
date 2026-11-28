@@ -1,0 +1,29 @@
+##### loading r5capture-fast.elf
+name=79000000.r5f state=offline firmware=j722s-mcu-r5f0_0-fw
+state=running firmware=r5test-fast.elf
+[   53.318741] remoteproc remoteproc2: remote processor 79000000.r5f is now up
+Zephyr version 4.5.0
+##### profile at 25000 frames/s requested (SPI 1250000 Hz, interrupts off)
+ok: sampling, rate=25000 frames/s, spi=1230769 Hz, irqoff=yes
+lateEvents=7361 maxOvershootUs=40.0 irqoff=yes
+profile over 8192 frames (us per frame; probes add a few timer reads):
+  frame start to next start    52.28   (= 19127 frames/s if back to back)
+    in CAPTURE_tick            51.03   (normal frames 51.02, block-end frames 52.25, worst 62.88)
+      SPI transfers (x2)       40.28
+        bit shifting           33.53
+        SPI register/CS work    6.75
+      capture bookkeeping      10.75
+    loop (wait, schedule, diag) 1.26
+##### profile at 16000 frames/s requested (SPI 1250000 Hz, interrupts off)
+ok: sampling, rate=16000 frames/s, spi=1230769 Hz, irqoff=yes
+lateEvents=0 maxOvershootUs=1.6 irqoff=yes
+profile over 8192 frames (us per frame; probes add a few timer reads):
+  frame start to next start    62.48   (= 16005 frames/s if back to back)
+    in CAPTURE_tick            49.27   (normal frames 49.26, block-end frames 50.47, worst 58.20)
+      SPI transfers (x2)       39.85
+        bit shifting           33.63
+        SPI register/CS work    6.21
+      capture bookkeeping       9.42
+    loop (wait, schedule, diag) 13.21
+##### leaving the R5 sampling cleanly at 16000 frames/s
+ok: sampling, rate=16000 frames/s, spi=1230769 Hz, irqoff=yes
