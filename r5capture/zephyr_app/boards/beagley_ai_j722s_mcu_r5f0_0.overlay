@@ -1,0 +1,19 @@
+/*
+ * r5capture firmware on the BeagleY-AI MCU R5F.
+ *
+ * The board gives Zephyr 14 MB of DRAM at 0xa1200000 (up to 0xa2000000, the
+ * end of the MCU R5F's carve-out). Keep the top 1 MB for the r5capture shared
+ * region (r5cap_heartbeat.h / r5cap_shared.h): Zephyr gets 13 MB, so nothing
+ * it links or allocates can land in 0xa1f00000-0xa2000000.
+ */
+
+&ddr1 {
+	reg = <0xa1200000 DT_SIZE_M(13)>;
+};
+
+/ {
+	r5cap_shm: memory@a1f00000 {
+		compatible = "mmio-sram";
+		reg = <0xa1f00000 DT_SIZE_M(1)>;
+	};
+};

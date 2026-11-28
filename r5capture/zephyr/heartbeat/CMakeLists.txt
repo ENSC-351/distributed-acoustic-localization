@@ -1,0 +1,6 @@
+# Heartbeat firmware for the MCU R5F (see ../README.md)
+cmake_minimum_required(VERSION 3.20.0)
+find_package(Zephyr REQUIRED HINTS $ENV{ZEPHYR_BASE})
+project(r5_heartbeat LANGUAGES C)
+target_sources(app PRIVATE src/main.c)
+zephyr_linker_sources(SECTIONS rsc_table.ld)

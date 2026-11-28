@@ -1,0 +1,52 @@
+##### 1. MCU_SPI0 powered and owned by the expected controller?
+MCU_SPI0: /sys/devices/platform/bus@f0000/bus@f0000:bus@4000000/4b00000.spi (driver: omap2_mcspi)
+power/control=on runtime_status=active
+Linux SPI device(s) on it:  (don't use them while the R5 samples)
+##### 2. r5capture-fast.elf is already running and answering r5cap_ctl: not reloading
+##### 3. real SPI clock and ADC values, measured on the R5
+spi=mcspi clock=1230769 Hz (0 = default)  I-cache=on D-cache=off
+mcspi SPI clock set to 1230769 Hz (divider result)
+ch0 [mcspi]: 21.00 us per conversion (shift 16.87 us -> SPI ~1125 kHz for 19 bits); values min 1927 mean 1945 max 1976
+ch1 [mcspi]: 20.82 us per conversion (shift 16.84 us -> SPI ~1127 kHz for 19 bits); values min 2368 mean 2391 max 2430
+one frame (2 conversions) takes 41.82 us -> at most ~23911 frames/s with no margin
+##### 4. sweep, controlled through shared memory (r5cap_ctl); late frames over 3 s
+    SPI Hz    IRQs     rate  blocks/s  expected    late  ADCerr   worst late
+   1250000  irqoff    20000     157.0     156.2       0       0        9.5 us
+   1250000  irqoff    21000     164.7     164.1       0       0        9.4 us
+   1250000  irqoff    22000     172.3     171.9       0       0        8.7 us
+   1250000  irqoff    23000     180.7     179.7       0       0        8.8 us
+   1250000  irqoff    24000     188.0     187.5       0       0       12.0 us
+   1250000  irqoff    25000     195.7     195.3     777       0       40.0 us
+##### 4b. when do late frames happen? (16,000 frames/s, interrupts on, 3 s)
+lateEvents=24 maxOvershootUs=40.8 irqoff=no
+last 24 late frames (time since previous one, how late):
+         - ms    37.6 us late
+     80.10 ms    37.8 us late
+    140.20 ms    33.2 us late
+     40.06 ms    40.7 us late
+    140.20 ms    35.2 us late
+    180.26 ms    38.2 us late
+    140.20 ms    32.6 us late
+     40.06 ms    40.3 us late
+    140.20 ms    34.3 us late
+    180.26 ms    36.6 us late
+    180.26 ms    38.6 us late
+    140.20 ms    33.0 us late
+     40.06 ms    40.8 us late
+    140.20 ms    36.3 us late
+    180.26 ms    38.1 us late
+    140.20 ms    33.3 us late
+     40.06 ms    40.7 us late
+    140.20 ms    34.9 us late
+    180.26 ms    37.0 us late
+    140.20 ms    32.4 us late
+     40.06 ms    39.6 us late
+    140.20 ms    33.9 us late
+    180.26 ms    35.9 us late
+    180.26 ms    38.1 us late
+##### 5. result
+fastest clean setting: 24000 frames/s per mic at SPI 1250000 Hz, irqoff
+ok: sampling, rate=24000 frames/s, spi=1230769 Hz, irqoff=yes
+control: seq=12 ackSeq=12 running rate=24000 frames/s spi=1230769 Hz irqoff=yes
+ring: state=1 writeSeq=188 lateTicks=0 adcErrors=0 period=1041 ticks @ 25000000 Hz
+R5 is sampling. Record with:  sudo ./r5cap_ring_read 10 > r5taps.wav 2> r5taps.txt
