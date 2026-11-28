@@ -5,6 +5,19 @@ It was written on the BeagleBoard Debian Trixie image (step 7 covers boards on D
 It uses the IPs from the network plan (master 192.168.10.1, nodes 192.168.10.11 to .14).
 `documentation/time-sync.md` in the design docs explains why each chrony setting is there.
 
+## 0. Log In From the Laptop
+
+Every board shows up at 192.168.7.2 over USB, so ssh sees a different host key each time you swap boards and refuses to connect (`REMOTE HOST IDENTIFICATION HAS CHANGED`).
+That's expected here, so clear the old key and copy yours over once per board:
+
+```sh
+ssh-keygen -R 192.168.7.2
+ssh-copy-id -i ~/.ssh/id_ed25519.pub USER@192.168.7.2
+```
+
+Replace `USER` with the board's login name.
+After that `ssh` and `scp` don't ask for a password (run `ssh-add` first if your key has a passphrase).
+
 ## 1. Get the Board Online
 
 chrony has to be installed while the board still has internet, since the project switch doesn't have any.
@@ -179,6 +192,16 @@ A few choices in the service file are worth knowing about:
 - It doesn't wait for `network-online.target`. `eth0` keeps asking for DHCP on the project switch and never counts as online, so that would hold boot up for 2 minutes. The node retries the master every second anyway.
 - It waits up to a minute for chrony to sync to the master (`chronyc waitsync`), so the first events have usable times. If chrony can't sync it starts the node anyway.
 - If `r5_start.sh` fails (no overlay, for example) the service tries 5 times and then gives up. `systemctl status acoustic-node` shows why.
+
+The R5 needs the `mcu-spi0-adc` overlay (`overlays/README.md`).
+Boards set up for the course labs use a bit-banged SPI overlay instead, so check before installing:
+
+```sh
+readlink -f /sys/class/spi_master/*/device     # want .../4b00000.spi, not spi-gpio-local
+grep fdtoverlays /boot/firmware/extlinux/extlinux.conf
+```
+
+It uses the same header pins (19, 21, 23, and 24), so swapping the overlay doesn't need any rewiring.
 - A node that gets kicked off because another node has its ID exits cleanly, so systemd doesn't restart it.
 
 ## 9. Switching Back to Normal
@@ -239,3 +262,8 @@ Node madden-byai, 2026-11-28:
 - The laptop build failed with `GLIBC_2.38 not found`. A static build (above) starts fine.
 - chrony was already synced to the master (`^*`, `Reach 377`, about 4 µs off).
 - Its `eth0` drop-in had 192.168.10.11, the same address as zta32, so it needs to move to .12.
+
+Node on Tyler's board (hostname BeagleBone), 2026-11-28:
+
+- Debian 13.7, kernel 7.2.9-arm64-k3-r19. `eth0` already had 192.168.10.13 and chrony was synced to the master (`^*`, `Reach 377`, about 3.5 µs off).
+- The boot config used Tyler's own bit-banged overlay (`beagley-spi0-local.dtbo`, driver `spi-gpio`), so `mcspi_power_on.sh` can't find MCU_SPI0 and the R5 can't sample until the overlay is swapped.
