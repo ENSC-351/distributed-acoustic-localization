@@ -23,7 +23,7 @@ typedef struct {
     bool isOpen;
     int64_t openedMs;
     int count;
-    DashboardBearing bearings[LAYOUT_NUM_NODES];
+    DashboardBearing bearings[LAYOUT_MAX_NODES];
 } Group;
 
 static pthread_mutex_t lock = PTHREAD_MUTEX_INITIALIZER;
@@ -51,7 +51,7 @@ static void closeGroup(void)
     memset(&fix, 0, sizeof(fix));
     fix.numBearings = group.count;
 
-    LocateLine lines[LAYOUT_NUM_NODES];
+    LocateLine lines[LAYOUT_MAX_NODES];
     for (int i = 0; i < group.count; i++) {
         fix.bearings[i] = group.bearings[i];
         const LayoutNode *node = Layout_getById(group.bearings[i].nodeId);
@@ -100,7 +100,7 @@ void Fusion_addEvent(uint16_t nodeId, float thetaDeg, float confidence, uint16_t
     bearing->bearingDeg = Layout_thetaToBearingDeg(node, thetaDeg);
     bearing->confidence = confidence;
 
-    if (group.count == LAYOUT_NUM_NODES) {
+    if (group.count == Layout_count()) {
         closeGroup();
     }
     pthread_mutex_unlock(&lock);

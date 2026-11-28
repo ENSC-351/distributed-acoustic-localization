@@ -21,8 +21,8 @@
 #include <stdbool.h>
 #include <stdint.h>
 
-#define LAYOUT_NUM_NODES 3
-#define LAYOUT_SIDE_M 2.0f  // distance between nodes; measure and update for the demo
+#define LAYOUT_MAX_NODES 8   // most nodes a layout file can list
+#define LAYOUT_SIDE_M 2.0f  // built-in triangle only: distance between nodes (use a layout file for the real setup)
 
 /**
  * @brief One node's place on the map
@@ -35,7 +35,7 @@ typedef struct {
 } LayoutNode;
 
 /**
- * @brief Returns the node at index 0 .. LAYOUT_NUM_NODES-1
+ * @brief Returns the node at index 0 .. Layout_count()-1
  */
 const LayoutNode *Layout_getByIndex(int index);
 
@@ -60,5 +60,18 @@ float Layout_bearingToThetaDeg(const LayoutNode *node, float bearingDeg);
  * @brief Wraps an angle in degrees to (-180, 180]
  */
 float Layout_wrapDeg(float angleDeg);
+
+/**
+ * @brief Loads node positions from a text file, replacing the built-in triangle.
+ *        One node per line: "<id> <x m> <y m> <heading deg>"; '#' starts a comment.
+ *        Heading is the way the node faces (its 0 degrees), counter-clockwise from +x.
+ * @return false (and keeps the built-in triangle) if the file can't be read or has no nodes
+ */
+bool Layout_load(const char *path);
+
+/**
+ * @brief Number of nodes in the layout
+ */
+int Layout_count(void);
 
 #endif

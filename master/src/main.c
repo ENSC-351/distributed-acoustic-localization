@@ -1,9 +1,11 @@
 // Entry point for the master executable: collects sound directions from the
 // nodes, works out where each sound came from, and serves it to the web GUI.
 //
-// Usage: master [port] [--demo]
-//   port    TCP port the nodes connect to (default PROTO_PORT)
-//   --demo  also make up a fake sound every few seconds (no nodes needed)
+// Usage: master [port] [--layout <file>] [--demo]
+//   port      TCP port the nodes connect to (default PROTO_PORT)
+//   --layout  node IDs, positions and facings (master/layout.example.txt);
+//             without it, nodes 1-3 in a 2 m triangle facing the centre
+//   --demo    also make up a fake sound every few seconds (no nodes needed)
 //
 // Data flow:
 //   netServer --EventBuffer--> localizer --> fusion --> dashboard --> UDP (web GUI)
@@ -37,9 +39,12 @@ int main(int argc, char *argv[])
 	bool isDemo = false;
 	bool isValid = true;
 	bool hasPort = false;
+	const char *layoutPath = NULL;
 	for (int i = 1; i < argc; i++) {
 		if (strcmp(argv[i], "--demo") == 0) {
 			isDemo = true;
+		} else if (strcmp(argv[i], "--layout") == 0 && i + 1 < argc) {
+			layoutPath = argv[++i];
 		} else if (!hasPort && parseUint16(argv[i], &port)) {
 			hasPort = true;
 		} else {
@@ -47,7 +52,7 @@ int main(int argc, char *argv[])
 		}
 	}
 	if (!isValid) {
-		fprintf(stderr, "Usage: %s [port] [--demo]\n", argv[0]);
+		fprintf(stderr, "Usage: %s [port] [--layout <file>] [--demo]\n", argv[0]);
 		fprintf(stderr, "  port defaults to %d\n", PROTO_PORT);
 		return EXIT_FAILURE;
 	}
@@ -56,8 +61,15 @@ int main(int argc, char *argv[])
 	// has SIGINT and SIGTERM blocked
 	Shutdown_init();
 
+	if (layoutPath != NULL && !Layout_load(layoutPath)) {
+		return EXIT_FAILURE;      // a wrong layout would put every sound in the wrong place
+	}
+	for (int i = 0; i < Layout_count(); i++) {
+		const LayoutNode *node = Layout_getByIndex(i);
+		printf("Node %u at (%.2f, %.2f) m, facing %.0f deg\n", node->id, node->x, node->y, node->headingDeg);
+	}
 	Dashboard_init(isDemo);
-	for (int i = 0; i < LAYOUT_NUM_NODES; i++) {
+	for (int i = 0; i < Layout_count(); i++) {
 		const LayoutNode *node = Layout_getByIndex(i);
 		Dashboard_setNodePose(node->id, node->x, node->y, node->headingDeg);
 	}

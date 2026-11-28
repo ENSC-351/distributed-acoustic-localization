@@ -97,14 +97,14 @@ document.addEventListener('DOMContentLoaded', function() {
 
 function readColors() {
 	var css = getComputedStyle(document.documentElement);
-	['map-bg', 'map-grid', 'map-grid-major', 'map-label', 'map-triangle', 'node-1', 'node-2', 'node-3',
+	['map-bg', 'map-grid', 'map-grid-major', 'map-label', 'map-triangle', 'node-1', 'node-2', 'node-3', 'node-4',
 	 'fix', 'problem', 'heat-1', 'heat-2', 'heat-low', 'heat-mid', 'heat-high'].forEach(function(name) {
 		colors[name] = css.getPropertyValue('--' + name).trim();
 	});
 }
 
 function nodeColor(id) {
-	return colors['node-' + (((id - 1) % 3) + 1)];
+	return colors['node-' + (((id - 1) % 4) + 1)];
 }
 
 /* ---------- messages from the server ---------- */

@@ -6,7 +6,7 @@ Several BeagleY-AI "nodes" each estimate the direction of a sound and report it 
 ## Layout
 
 - `node/`: the executable that runs on each node board
-- `master/`: the executable that runs on the master board. Groups the nodes' direction reports for each sound and triangulates it (least-squares crossing of the lines). Node positions are in `master/src/layout.c` (equilateral triangle, every node facing the centre). Serves its state to the web GUI over UDP port 12345. Nodes connect over TCP (port from `common/protocol.h`); `master --demo` adds fake sounds that go through the same triangulation
+- `master/`: the executable that runs on the master board. Groups the nodes' direction reports for each sound and triangulates it (least-squares crossing of the lines). Node IDs and positions come from a layout file (`master --layout layout.txt`, see `master/layout.example.txt`); without one, nodes 1-3 in a 2 m triangle facing the centre. Serves its state to the web GUI over UDP port 12345. Nodes connect over TCP (port from `common/protocol.h`); `master --demo` adds fake sounds that go through the same triangulation
 - `web/`: Node.js web GUI for the master (port 8088): the node triangle, each node's direction line for the latest sound, a heat map of where the lines agree, and a pulse at the estimate. Relays to the master over UDP
 - `common/`: library shared by the node and master (wire protocol)
 - `dsp/`: TDOA / direction estimator library and its host tests (see `dsp/README.md`)
@@ -33,7 +33,7 @@ Add `-DENABLE_ASAN=ON` to the first command to build with the address sanitizer.
 Full commands (build, copy to the board, run, settings): `web/RUN.md`. In short, on the master board:
 
 ```
-./master --demo
+./master --layout layout.txt      # add --demo for fake sounds without nodes
 cd web && node server.js
 ```
 

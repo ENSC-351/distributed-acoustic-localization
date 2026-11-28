@@ -1,0 +1,13 @@
+# Node layout for the master: master --layout layout.txt
+# One node per line:  <node ID>  <x m>  <y m>  <heading deg>
+#   x, y     where the node sits on the floor plan, in metres (any origin)
+#   heading  the direction the node faces (its theta = 0), in degrees
+#            counter-clockwise from +x. Mount each node with mic B on its
+#            right when looking along this direction.
+# Node IDs are the ones each node was started with (install_node_service.sh).
+#
+# Example: three nodes 2 m apart in an equilateral triangle, each facing the
+# centre (the same as the built-in layout). Measure yours and edit.
+1   0.000   1.155   -90
+2  -1.000  -0.577    30
+3   1.000  -0.577   150

@@ -42,7 +42,7 @@ static double random01(void)
  */
 static void pickSource(double *x, double *y)
 {
-    if (rand_r(&seed) % 100 < INSIDE_PERCENT) {
+    if (Layout_count() >= 3 && rand_r(&seed) % 100 < INSIDE_PERCENT) {
         // Uniform inside the triangle: fold the unit square onto it
         double u = random01();
         double v = random01();
@@ -94,10 +94,10 @@ static void makeSound(void)
     double x, y;
     pickSource(&x, &y);
 
-    int delayMs[LAYOUT_NUM_NODES];
-    bool hears[LAYOUT_NUM_NODES];
+    int delayMs[LAYOUT_MAX_NODES];
+    bool hears[LAYOUT_MAX_NODES];
     int numHearing = 0;
-    for (int i = 0; i < LAYOUT_NUM_NODES; i++) {
+    for (int i = 0; i < Layout_count(); i++) {
         delayMs[i] = rand_r(&seed) % (MAX_DELAY_MS + 1);
         hears[i] = (rand_r(&seed) % 100 >= MISS_PERCENT);
         numHearing += hears[i] ? 1 : 0;
@@ -111,9 +111,9 @@ static void makeSound(void)
 
     // Deliver in order of delay
     int elapsedMs = 0;
-    for (int sent = 0; sent < LAYOUT_NUM_NODES; sent++) {
+    for (int sent = 0; sent < Layout_count(); sent++) {
         int next = -1;
-        for (int i = 0; i < LAYOUT_NUM_NODES; i++) {
+        for (int i = 0; i < Layout_count(); i++) {
             if (delayMs[i] >= 0 && (next < 0 || delayMs[i] < delayMs[next])) {
                 next = i;
             }
@@ -141,7 +141,7 @@ static void *demoThreadFn(void *arg)
             makeSound();
             waitedMs = 0;
         }
-        for (int i = 0; i < LAYOUT_NUM_NODES; i++) {
+        for (int i = 0; i < Layout_count(); i++) {
             Dashboard_touchNode(Layout_getByIndex(i)->id);  // stand-in for heartbeats
         }
         sleepMs(SLEEP_STEP_MS);
@@ -155,7 +155,7 @@ void DemoSource_init(void)
     if (isInitialized) {
         return;
     }
-    for (int i = 0; i < LAYOUT_NUM_NODES; i++) {
+    for (int i = 0; i < Layout_count(); i++) {
         Dashboard_setNodeConnected(Layout_getByIndex(i)->id, true);
     }
     atomic_store(&isRunning, true);
