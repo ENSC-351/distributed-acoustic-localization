@@ -1,7 +1,7 @@
 #include "udp.h"
 #include "dashboard.h"
 #include "demo_source.h"
-#include "stop.h"
+#include "common/shutdown.h"
 #include <errno.h>
 #include <netinet/in.h>
 #include <pthread.h>
@@ -138,7 +138,7 @@ static bool handleStopCommand(const char *arg, const struct sockaddr_in *sender)
 {
     (void)arg;
     sendReply(STOP_REPLY, sender);
-    Stop_request();
+    Shutdown_request();
     return false;
 }
 

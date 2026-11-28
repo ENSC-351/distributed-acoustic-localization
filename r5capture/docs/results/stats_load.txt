@@ -1,0 +1,21 @@
+Measuring the Linux sampler for 30 s (reader delay 0 us per block)...
+
+== Setup
+  CPU governor: unknown   spidev.bufsiz: 4096   SPI framing: one 19-bit word (19 clocks, the minimum) per conversion
+  block: 16 frames x 2 mics (spidev allows 16 frames per SPI message)
+
+== Sample rate (per mic)
+  inside a block:         18119 samples/s  (frame period 57.99 us)
+  long-run, with gaps:    17080 samples/s  (512416 frames in 30.000 s)
+  mic 1 sampled 27.6 us after mic 0 (multiplexer skew)
+
+== Gaps between blocks (32025 gaps)
+  mean 8.9 us   median 9.6 us   p99 11.5 us   p99.9 13.8 us   max 41.6 us
+  <10us 27884   10-50us 4141   50-100us 0   100us-1ms 0   1-10ms 0   >10ms 0
+  time NOT sampled (in gaps): 0.95 % of the run
+
+== Blocks
+  captured by the sampler: 32026   received by this reader: 32026
+  dropped (reader fell behind): 0 = 0.000 %
+  disturbed timing (>5% off):  29 = 0.091 %
+  ADC errors: 0   max gap seen by the sampler: 41.6 us   SPI call overhead: 0.0 us

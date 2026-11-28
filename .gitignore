@@ -4,6 +4,9 @@ build/
 *.a
 *.so
 
+# Jack's build script
+build.sh
+
 # CMake files from in-source builds
 CMakeFiles/
 CMakeCache.txt
@@ -24,3 +27,6 @@ compile_commands.json
 
 # Node.js
 node_modules/
+
+# Python
+__pycache__/

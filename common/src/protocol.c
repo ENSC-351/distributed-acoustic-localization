@@ -1,6 +1,6 @@
 // Pack/unpack for the node to master wire protocol
 //
-// Bytes are written with shifts, so the output is big-endian on any host and
+// Bytes are written with shifts so the output is big-endian on any host and
 // buffers never need to be aligned.
 #include "common/protocol.h"
 

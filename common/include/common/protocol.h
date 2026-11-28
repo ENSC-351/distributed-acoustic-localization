@@ -56,9 +56,10 @@ enum proto_bye_reason {
     PROTO_BYE_REPLACED       = 2,
 };
 
-// EVENT flags (PROPOSED, final bits are up to DSP)
-#define PROTO_EVENT_PHI_VALID    (1u << 0)
-#define PROTO_EVENT_THETA_MIRROR (1u << 1) // theta has a front/back mirror solution
+// EVENT flags (agreed with DSP)
+#define PROTO_EVENT_PHI_VALID    (1u << 0) // never set with 2 mics
+#define PROTO_EVENT_THETA_MIRROR (1u << 1) // theta has a front/back mirror solution (always set with 2 mics)
+#define PROTO_EVENT_CLIPPING     (1u << 2) // either channel clipped during the window
 
 // Return codes for the unpack functions
 enum proto_result {
@@ -110,12 +111,16 @@ struct proto_bye {
 };
 
 // EVENT (40 bytes)
-//   0  u64  t_event_ns       event time (meaning is up to DSP)
+//   0  u64  t_event_ns       CLOCK_REALTIME of the first sample of the window the
+//                            DSP analyzed (not when the estimate finished)
 //   8  u64  t_send_ns        CLOCK_REALTIME when sent, for latency measurement
-//  16  f32  theta            units and frame are up to DSP
-//  20  f32  phi              only valid if PROTO_EVENT_PHI_VALID is set
-//  24  f32  confidence       PROPOSED: 0.0 to 1.0
-//  28  f32  dominant_freq_hz PROPOSED: helps the master match events across nodes
+//  16  f32  theta            degrees, -90 to +90. 0 is broadside (straight out from
+//                            the middle of the mic pair), positive toward mic B
+//  20  f32  phi              only valid if PROTO_EVENT_PHI_VALID is set (never with
+//                            2 mics, so it's sent as 0)
+//  24  f32  confidence       0.0 (unusable) to 1.0. An uncalibrated quality score,
+//                            not a probability
+//  28  f32  dominant_freq_hz rough hint for matching events across nodes, 0 if unknown
 //  32  u16  flags            PROTO_EVENT_*
 //  34  2    reserved
 //  36  u32  event_id         DSP counter, a gap means events were lost
@@ -134,7 +139,7 @@ struct proto_event {
 //   0  u64  t_send_ns    node's CLOCK_REALTIME when sent
 //   8  u32  clock_err_us chrony's estimated error, from adjtimex()
 //  12  u8   clock_synced 1 if the kernel reports the clock as synced
-//  13  u8   dsp_alive    1 if the DSP heartbeat counter moved since last check
+//  13  u8   dsp_alive    1 if the DSP's captured buffer counter moved since last check
 //  14  2    reserved
 //  16  u32  ring_drops   events the DSP dropped because the ring was full
 struct proto_heartbeat {

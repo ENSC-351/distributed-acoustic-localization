@@ -29,5 +29,16 @@ set(DEPLOY_DIR "$ENV{HOME}/ensc351/public/myApps")
 
 # Which folders to build
 add_subdirectory(common)
+add_subdirectory(hal)
+add_subdirectory(audio)
+add_subdirectory(dsp)
 add_subdirectory(node)
 add_subdirectory(master)
+add_subdirectory(audio_meter)
+
+# Unit tests only build for the host (cross-compiled binaries can't run here)
+if(NOT CMAKE_CROSSCOMPILING)
+  enable_testing()
+  add_subdirectory(dsp/tests)
+  add_subdirectory(audio/tests)
+endif()
