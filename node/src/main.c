@@ -30,6 +30,10 @@ int main(int argc, char *argv[])
 		return EXIT_FAILURE;
 	}
 
+	// stdout is only line buffered on a terminal. Under systemd it goes to the
+	// journal through a pipe, where lines would sit in the buffer for minutes.
+	setvbuf(stdout, NULL, _IOLBF, 0);
+
 	// Shutdown_init() blocks Ctrl+C and SIGTERM, and starts a new thread that waits for them.
 	// It must run first because the shutdown thread must be the one to handle
 	// a shutdown signal. We don't want a different thread to encounter that
