@@ -1,12 +1,14 @@
 // netServer.c
 // Network server module: one thread uses poll() to watch the listening
 // socket and every node's socket at once, so no node can hold up another.
-
-//  - a node connecting with an ID that's already connected should replace
-//    the old connection (send it BYE with PROTO_BYE_REPLACED)
-//  - log HEARTBEAT problems (clock not synced, DSP not alive, ring drops)
-//  - warn when event_id jumps, which means events were lost
-//  - answer a HELLO with the wrong protocol version with PROTO_HELLO_VERSION
+//
+//  - a node reconnecting with an ID that's already connected replaces the
+//    old connection (which gets BYE with PROTO_BYE_REPLACED)
+//  - HEARTBEAT problems (clock not synced, DSP not alive, ring drops) are
+//    logged when they change
+//  - a HELLO with the wrong protocol version gets PROTO_HELLO_VERSION
+//  - event_id gaps are NOT checked: the node counts windows it chose not to
+//    send, so a gap is normal (master/LOCALIZER_HANDOFF.md)
 
 #include "master/netServer.h"
 #include "master/eventBuffer.h"
@@ -301,8 +303,18 @@ static void handleMessages(Client_t *pClient)
 	}
 
 	if (isConnected && result != FRAMING_NEED_MORE_BYTES) {
-		//bad magic, version, or length: the stream can't be trusted
-		fprintf(stderr, "%s: framing error %d, closing.\n", pClient->address, result);
+		// A HELLO from a node with a different protocol version: the header was
+		// still filled in, so tell the node why before closing, instead of
+		// leaving it to guess
+		if (result == FRAMING_BAD_VERSION && pClient->state == CLIENT_AWAITING_HELLO &&
+		    header.msg_type == PROTO_MSG_HELLO) {
+			fprintf(stderr, "%s: HELLO with protocol version %u (we use %u), rejecting.\n",
+			        pClient->address, header.version, PROTO_VERSION);
+			sendHelloAck(pClient, PROTO_HELLO_VERSION);
+		} else {
+			//bad magic, version, or length: the stream can't be trusted
+			fprintf(stderr, "%s: framing error %d, closing.\n", pClient->address, result);
+		}
 		isConnected = false;
 	}
 	if (!isConnected) {
